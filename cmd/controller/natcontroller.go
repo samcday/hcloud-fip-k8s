@@ -1,86 +1,96 @@
 package main
 
 import (
-	"context"
-	"hcloud-the-nat-controller/pkg/cmd"
+	"github.com/hetznercloud/hcloud-go/hcloud"
 	"hcloud-the-nat-controller/pkg/controllers/hcloudfip"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"os"
-	"sync"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/config"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
 
-func start(ctx context.Context) error {
-	//pubIfaceName := os.Getenv("PUB_IFACE")
-	//if pubIfaceName == "" {
-	//	return errors.New("PUB_IFACE not specified")
-	//}
-	//pubAddrStr := os.Getenv("PUB_ADDR")
-	//if pubAddrStr == "" {
-	//	return errors.New("PUB_ADDR not specified")
-	//}
-	//
-	////privIfaceName := os.Getenv("PRIV_IFACE")
-	////if privIfaceName == "" {
-	////	return errors.New("PRIV_IFACE not specified")
-	////}
-	//
-	//pubAddr := net.ParseIP(pubAddrStr)
-	//if pubAddr == nil {
-	//	return errors.New("PUB_ADDR is not a valid IPv4 address")
-	//}
-	//pubIface, err := netlink.LinkByName(pubIfaceName)
-	//if err != nil {
-	//	return fmt.Errorf("failed to lookup PUB_IFACE: %w", err)
-	//}
-
-	return nil
-}
-
 func main() {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	logf.SetLogger(zap.New())
+	var log = logf.Log.WithName("nat-controller")
 
-	clientset, err := cmd.KubeClient()
-	if err != nil {
-		panic(err)
+	token := os.Getenv("HCLOUD_TOKEN")
+	if token == "" {
+		log.Error(nil, "HCLOUD_TOKEN missing")
+		os.Exit(1)
 	}
-
-	hcloudClient, err := cmd.HCloudClient()
-	if err != nil {
-		panic(err)
-	}
+	hcloudClient := hcloud.NewClient(hcloud.WithToken(token))
 
 	fipLabelSelector := os.Getenv("FIP_LABEL_SELECTOR")
 	if fipLabelSelector == "" {
-		panic("FIP_LABEL_SELECTOR missing")
+		log.Error(nil, "FIP_LABEL_SELECTOR missing")
+		os.Exit(1)
 	}
 
 	assignmentLabel := os.Getenv("NODE_LABEL")
 	if assignmentLabel == "" {
-		panic("NODE_LABEL missing")
+		log.Error(nil, "NODE_LABEL missing")
+		os.Exit(1)
 	}
 
-	nodeLabelSelector := os.Getenv("NODE_LABEL_SELECTOR")
+	nodeLabelSelector := labels.Everything()
+	if str := os.Getenv("NODE_LABEL_SELECTOR"); str != "" {
+		var err error
+		nodeLabelSelector, err = labels.Parse(str)
+		if err != nil {
+			log.Error(err, "failed to parse NODE_LABEL_SELECTOR")
+			os.Exit(1)
+		}
+	}
 
-	lec, err := cmd.LeaderElectorConfig("the-nat-controller", clientset)
+	floatingIPReconciler := hcloudfip.FloatingIPReconciler{
+		HCloudClient:    hcloudClient,
+		AssignmentLabel: assignmentLabel,
+		IPLabelSelector: fipLabelSelector,
+	}
+
+	podName := os.Getenv("POD_NAME")
+	if podName == "" {
+		log.Error(nil, "POD_NAME missing")
+		os.Exit(1)
+	}
+	podNamespace := os.Getenv("POD_NAMESPACE")
+	if podNamespace == "" {
+		log.Error(nil, "POD_NAMESPACE missing")
+		os.Exit(1)
+	}
+
+	mgr, err := manager.New(config.GetConfigOrDie(), manager.Options{
+		LeaderElection:                true,
+		LeaderElectionNamespace:       podNamespace,
+		LeaderElectionID:              "the-nat-controller",
+		LeaderElectionReleaseOnCancel: true,
+	})
 	if err != nil {
-		panic(err)
+		log.Error(err, "could not create manager")
+		os.Exit(1)
 	}
 
-	wg := &sync.WaitGroup{}
-
-	fip := hcloudfip.Controller{
-		Client:            clientset,
-		HClient:           hcloudClient,
-		IPLabelSelector:   fipLabelSelector,
-		NodeLabelSelector: nodeLabelSelector,
-		AssignmentLabel:   assignmentLabel,
-	}
-
-	err = fip.Start(ctx, lec, wg)
+	err = builder.
+		ControllerManagedBy(mgr).
+		For(&corev1.Node{}, builder.WithPredicates(predicate.NewPredicateFuncs(func(o client.Object) bool {
+			return nodeLabelSelector.Matches(labels.Set(o.GetLabels()))
+		}))).
+		WithEventFilter(predicate.LabelChangedPredicate{}).
+		Complete(&floatingIPReconciler)
 	if err != nil {
-		panic(err)
+		log.Error(err, "could not create controller")
+		os.Exit(1)
 	}
-	wg.Add(1)
 
-	wg.Wait()
+	if err := mgr.Start(signals.SetupSignalHandler()); err != nil {
+		log.Error(err, "could not start manager")
+		os.Exit(1)
+	}
 }
