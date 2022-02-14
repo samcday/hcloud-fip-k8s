@@ -27,32 +27,39 @@ func main() {
 	}
 	hcloudClient := hcloud.NewClient(hcloud.WithToken(token))
 
-	fipLabelSelector := os.Getenv("FIP_LABEL_SELECTOR")
+	fipLabelSelector := os.Getenv("FIP_SELECTOR")
 	if fipLabelSelector == "" {
-		log.Error(nil, "FIP_LABEL_SELECTOR missing")
+		log.Error(nil, "FIP_SELECTOR missing")
 		os.Exit(1)
 	}
 
-	assignmentLabel := os.Getenv("NODE_LABEL")
+	requestAnnotation := os.Getenv("REQUEST_ANNOTATION")
+	if requestAnnotation == "" {
+		log.Error(nil, "REQUEST_ANNOTATION missing")
+		os.Exit(1)
+	}
+
+	assignmentLabel := os.Getenv("ASSIGNMENT_LABEL")
 	if assignmentLabel == "" {
-		log.Error(nil, "NODE_LABEL missing")
+		log.Error(nil, "ASSIGNMENT_LABEL missing")
 		os.Exit(1)
 	}
 
 	nodeLabelSelector := labels.Everything()
-	if str := os.Getenv("NODE_LABEL_SELECTOR"); str != "" {
+	if str := os.Getenv("NODE_SELECTOR"); str != "" {
 		var err error
 		nodeLabelSelector, err = labels.Parse(str)
 		if err != nil {
-			log.Error(err, "failed to parse NODE_LABEL_SELECTOR")
+			log.Error(err, "failed to parse NODE_SELECTOR")
 			os.Exit(1)
 		}
 	}
 
 	floatingIPReconciler := hcloudfip.FloatingIPReconciler{
-		HCloudClient:    hcloudClient,
-		AssignmentLabel: assignmentLabel,
-		IPLabelSelector: fipLabelSelector,
+		HCloudClient:      hcloudClient,
+		AssignmentLabel:   assignmentLabel,
+		IPLabelSelector:   fipLabelSelector,
+		RequestAnnotation: requestAnnotation,
 	}
 
 	podName := os.Getenv("POD_NAME")
@@ -82,7 +89,7 @@ func main() {
 		For(&corev1.Node{}, builder.WithPredicates(predicate.NewPredicateFuncs(func(o client.Object) bool {
 			return nodeLabelSelector.Matches(labels.Set(o.GetLabels()))
 		}))).
-		WithEventFilter(predicate.LabelChangedPredicate{}).
+		WithEventFilter(predicate.AnnotationChangedPredicate{}).
 		Complete(&floatingIPReconciler)
 	if err != nil {
 		log.Error(err, "could not create controller")

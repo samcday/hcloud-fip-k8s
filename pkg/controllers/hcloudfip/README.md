@@ -1,15 +1,11 @@
 ## hcloudfip
 
-This controller manages a pool of Hetzner Cloud floating IPs and ensures they are:
+This controller assigns floating IPs to Nodes that request them.
 
-* assigned to Nodes that request them with a label.
-* unassigned from Nodes that do not request them with a label.
-* (optionally) randomly distributed to Nodes if not yet assigned or requested.
+A floating IP is requested by annotating the Node. Once the assignment has been confirmed by Hetzner Cloud API, the IP is added to a label on the Node. This label can be used for things like pod affinity, DaemonSets, Cilium host policies, and so on.
 
-The Floating IPs that this controller manages can be limited with a [hcloud API label selector](https://docs.hetzner.cloud/#label-selector). Similarly, the Nodes that this controller will consider for assignment can be limited with a Kubernetes [label selector](https://kubernetes.io/docs/concepts/overview/working-with-objects/labels).
+If the annotation is removed from a Node, the floating IP is unassigned and the label is removed.
 
-Each Node can have a maximum of one Floating IP assigned per controller instance. Multiple instances of the assignment controller can be run. Each must have a different requesting label and set of Floating IPs. Each controller can have the same or overlapping node selection.
+The floating IPs available for assignment can be limited with a [hcloud API label selector](https://docs.hetzner.cloud/#label-selector). The Nodes that can assign IPs can also be limited with a Kubernetes [label selector](https://kubernetes.io/docs/concepts/overview/working-with-objects/labels).
 
-The controller will never remove the label requesting a floating IP.
-
-This controller requires that [hcloud-cloud-controller-manager](https://github.com/hetznercloud/hcloud-cloud-controller-manager) is running in the same cluster.
+This controller can assign only one floating IP per Node. [hcloud-cloud-controller-manager](https://github.com/hetznercloud/hcloud-cloud-controller-manager) must be running in the cluster.
