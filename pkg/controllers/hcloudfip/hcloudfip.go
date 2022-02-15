@@ -51,6 +51,8 @@ func (r *FloatingIPReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 		return reconcile.Result{}, errors.New("error resolving server ID of node")
 	}
 
+	labelValue, labelPresent := node.Labels[r.AssignmentLabel]
+
 	requestedFIP, ok := node.Annotations[r.RequestAnnotation]
 	if ok {
 		// Annotation requesting floating IP is present, ensure IP is assigned.
@@ -59,6 +61,7 @@ func (r *FloatingIPReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 			// IP not found. Maybe generate a warning Event here?
 			return reconcile.Result{}, errors.New("requested floating IP not found")
 		}
+
 		if r.serversByFIP[fipID] != serverID {
 			action, _, err := r.HCloudClient.FloatingIP.Assign(ctx, &hcloud.FloatingIP{ID: fipID}, &hcloud.Server{ID: serverID})
 			err = r.waitForAction(ctx, action, err)
@@ -69,36 +72,44 @@ func (r *FloatingIPReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 			log.Info("assigned floating IP to node", "floating-ip", requestedFIP, "node", node.Name)
 			r.serversByFIP[fipID] = serverID
 		}
+		if labelValue != requestedFIP {
+			patch := client.MergeFrom(node.DeepCopy())
+			node.Labels[r.AssignmentLabel] = requestedFIP
+			err := r.Patch(ctx, node, patch)
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+		}
 
-		patch := client.MergeFrom(node.DeepCopy())
-		node.Labels[r.AssignmentLabel] = requestedFIP
-		err = r.Patch(ctx, node, patch)
-		return reconcile.Result{}, err
+		// While a Node has a floating IP attached, queue regular reconciles to make sure it stays that way.
+		return reconcile.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
 	// Annotation not present. If label is, then unassign floating IP and remove label.
-	_, labelPresent := node.Labels[r.AssignmentLabel]
 	if !labelPresent {
 		return reconcile.Result{}, nil
 	}
 
-	for fipID, fipServer := range r.serversByFIP {
-		if fipServer == serverID {
-			action, _, err := r.HCloudClient.FloatingIP.Unassign(ctx, &hcloud.FloatingIP{ID: fipID})
-			err = r.waitForAction(ctx, action, err)
-			if err != nil {
-				return reconcile.Result{}, fmt.Errorf("error unassigning floating IP: %w", err)
-			}
-
-			log.Info("unassigned floating IP from node", "floating-ip", requestedFIP, "node", node.Name)
-			delete(r.serversByFIP, fipID)
-			break
+	// Look up floating IP referenced by label. If it exists and is still assigned to the Node, unassign it.
+	if fipID, ok := r.fipsByAddr[labelValue]; ok && r.serversByFIP[fipID] == serverID {
+		action, _, err := r.HCloudClient.FloatingIP.Unassign(ctx, &hcloud.FloatingIP{ID: fipID})
+		err = r.waitForAction(ctx, action, err)
+		if err != nil {
+			return reconcile.Result{}, fmt.Errorf("error unassigning floating IP: %w", err)
 		}
+
+		log.Info("unassigned floating IP from node", "floating-ip", requestedFIP, "node", node.Name)
+		delete(r.serversByFIP, fipID)
+	} else {
+		// Should log a Warning event here.
 	}
 
+	// Whether we actually unassigned something or not, the label goes away now.
 	patch := client.MergeFrom(node.DeepCopy())
 	delete(node.Labels, r.AssignmentLabel)
 	err = r.Patch(ctx, node, patch)
+
+	// No floating IP assigned, no requeue requested here.
 	return reconcile.Result{}, err
 }
 
@@ -108,20 +119,26 @@ func (r *FloatingIPReconciler) refreshFloatingIPs(ctx context.Context) error {
 		return nil
 	}
 
-	fips, _, err := r.HCloudClient.FloatingIP.List(ctx,
-		hcloud.FloatingIPListOpts{ListOpts: hcloud.ListOpts{LabelSelector: r.IPLabelSelector}})
-	if err != nil {
-		return fmt.Errorf("error listing floating IPs: %w", err)
-	}
+	page := 1
 
-	r.fipsByAddr = map[string]int{}
-	r.serversByFIP = map[int]int{}
-
-	for _, fip := range fips {
-		r.fipsByAddr[fip.IP.String()] = fip.ID
-		if server := fip.Server; server != nil {
-			r.serversByFIP[fip.ID] = server.ID
+	for page > 0 {
+		fips, resp, err := r.HCloudClient.FloatingIP.List(ctx,
+			hcloud.FloatingIPListOpts{ListOpts: hcloud.ListOpts{Page: page, LabelSelector: r.IPLabelSelector}})
+		if err != nil {
+			return fmt.Errorf("error listing floating IPs: %w", err)
 		}
+
+		r.fipsByAddr = map[string]int{}
+		r.serversByFIP = map[int]int{}
+
+		for _, fip := range fips {
+			r.fipsByAddr[fip.IP.String()] = fip.ID
+			if server := fip.Server; server != nil {
+				r.serversByFIP[fip.ID] = server.ID
+			}
+		}
+
+		page = resp.Meta.Pagination.NextPage
 	}
 
 	r.fipLastUpdate = time.Now()
