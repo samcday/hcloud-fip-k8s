@@ -2,22 +2,20 @@ package main
 
 import (
 	"github.com/hetznercloud/hcloud-go/hcloud"
+	"go.uber.org/zap/zapcore"
 	"hcloud-the-nat-controller/pkg/controllers/hcloudfip"
-	corev1 "k8s.io/api/core/v1"
+	"hcloud-the-nat-controller/pkg/controllers/natgateway"
 	"k8s.io/apimachinery/pkg/labels"
 	"os"
-	"sigs.k8s.io/controller-runtime/pkg/builder"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
 
 func main() {
-	logf.SetLogger(zap.New())
+	logf.SetLogger(zap.New(zap.UseDevMode(true), zap.Level(zapcore.DebugLevel)))
 	var log = logf.Log.WithName("nat-controller")
 
 	token := os.Getenv("HCLOUD_TOKEN")
@@ -27,39 +25,32 @@ func main() {
 	}
 	hcloudClient := hcloud.NewClient(hcloud.WithToken(token))
 
-	fipLabelSelector := os.Getenv("FIP_SELECTOR")
-	if fipLabelSelector == "" {
+	fipSelector := os.Getenv("FIP_SELECTOR")
+	if fipSelector == "" {
 		log.Error(nil, "FIP_SELECTOR missing")
 		os.Exit(1)
 	}
 
-	requestAnnotation := os.Getenv("REQUEST_ANNOTATION")
-	if requestAnnotation == "" {
+	fipReqAnnotation := os.Getenv("REQUEST_ANNOTATION")
+	if fipReqAnnotation == "" {
 		log.Error(nil, "REQUEST_ANNOTATION missing")
 		os.Exit(1)
 	}
 
-	assignmentLabel := os.Getenv("ASSIGNMENT_LABEL")
-	if assignmentLabel == "" {
-		log.Error(nil, "ASSIGNMENT_LABEL missing")
+	fipLabel := os.Getenv("FIP_ASSIGNMENT_LABEL")
+	if fipLabel == "" {
+		log.Error(nil, "FIP_ASSIGNMENT_LABEL missing")
 		os.Exit(1)
 	}
 
-	nodeLabelSelector := labels.Everything()
+	nodeSelector := labels.Everything()
 	if str := os.Getenv("NODE_SELECTOR"); str != "" {
 		var err error
-		nodeLabelSelector, err = labels.Parse(str)
+		nodeSelector, err = labels.Parse(str)
 		if err != nil {
 			log.Error(err, "failed to parse NODE_SELECTOR")
 			os.Exit(1)
 		}
-	}
-
-	floatingIPReconciler := hcloudfip.FloatingIPReconciler{
-		HCloudClient:      hcloudClient,
-		AssignmentLabel:   assignmentLabel,
-		IPLabelSelector:   fipLabelSelector,
-		RequestAnnotation: requestAnnotation,
 	}
 
 	podName := os.Getenv("POD_NAME")
@@ -78,21 +69,22 @@ func main() {
 		LeaderElectionNamespace:       podNamespace,
 		LeaderElectionID:              "the-nat-controller",
 		LeaderElectionReleaseOnCancel: true,
+		MetricsBindAddress:            os.Getenv("METRICS_LISTEN"),
 	})
 	if err != nil {
 		log.Error(err, "could not create manager")
 		os.Exit(1)
 	}
 
-	err = builder.
-		ControllerManagedBy(mgr).
-		For(&corev1.Node{}, builder.WithPredicates(predicate.NewPredicateFuncs(func(o client.Object) bool {
-			return nodeLabelSelector.Matches(labels.Set(o.GetLabels()))
-		}))).
-		WithEventFilter(predicate.AnnotationChangedPredicate{}).
-		Complete(&floatingIPReconciler)
+	err = hcloudfip.Run(mgr, hcloudClient, fipSelector, nodeSelector, fipLabel, fipReqAnnotation)
 	if err != nil {
-		log.Error(err, "could not create controller")
+		log.Error(err, "could not create hcloudfip controller")
+		os.Exit(1)
+	}
+
+	err = natgateway.Run(mgr, natgateway.Options{FIPAssignLabel: fipLabel, SetupAnnotation: "setup"})
+	if err != nil {
+		log.Error(err, "could not create natgateway controller")
 		os.Exit(1)
 	}
 

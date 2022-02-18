@@ -4,6 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"k8s.io/apimachinery/pkg/labels"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"strconv"
 	"strings"
 	"time"
@@ -17,19 +21,36 @@ import (
 
 var log = logf.Log.WithName("hcloudfip")
 
-type FloatingIPReconciler struct {
+type Reconciler struct {
 	client.Client
-	HCloudClient      *hcloud.Client
-	IPLabelSelector   string
-	RequestAnnotation string
-	AssignmentLabel   string
+	hc            *hcloud.Client
+	fipSelector   string
+	reqAnnotation string
+	assignLabel   string
 
 	fipLastUpdate time.Time
 	fipsByAddr    map[string]int
 	serversByFIP  map[int]int
 }
 
-func (r *FloatingIPReconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
+func Run(mgr manager.Manager, hc *hcloud.Client, fipSelector string, nodeSelector labels.Selector, assignLabel string, reqAnnotation string) error {
+	rec := Reconciler{
+		hc:            hc,
+		assignLabel:   assignLabel,
+		fipSelector:   fipSelector,
+		reqAnnotation: reqAnnotation,
+	}
+
+	return builder.
+		ControllerManagedBy(mgr).
+		For(&corev1.Node{}, builder.WithPredicates(predicate.NewPredicateFuncs(func(o client.Object) bool {
+			return nodeSelector.Matches(labels.Set(o.GetLabels()))
+		}))).
+		WithEventFilter(predicate.AnnotationChangedPredicate{}).
+		Complete(&rec)
+}
+
+func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	node := &corev1.Node{}
 	err := r.Get(ctx, req.NamespacedName, node)
 	if err != nil {
@@ -51,9 +72,9 @@ func (r *FloatingIPReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 		return reconcile.Result{}, errors.New("error resolving server ID of node")
 	}
 
-	labelValue, labelPresent := node.Labels[r.AssignmentLabel]
+	labelValue, labelPresent := node.Labels[r.assignLabel]
 
-	requestedFIP, ok := node.Annotations[r.RequestAnnotation]
+	requestedFIP, ok := node.Annotations[r.reqAnnotation]
 	if ok {
 		// Annotation requesting floating IP is present, ensure IP is assigned.
 		fipID, ok := r.fipsByAddr[requestedFIP]
@@ -63,7 +84,7 @@ func (r *FloatingIPReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 		}
 
 		if r.serversByFIP[fipID] != serverID {
-			action, _, err := r.HCloudClient.FloatingIP.Assign(ctx, &hcloud.FloatingIP{ID: fipID}, &hcloud.Server{ID: serverID})
+			action, _, err := r.hc.FloatingIP.Assign(ctx, &hcloud.FloatingIP{ID: fipID}, &hcloud.Server{ID: serverID})
 			err = r.waitForAction(ctx, action, err)
 			if err != nil {
 				return reconcile.Result{}, fmt.Errorf("error assigning floating IP: %w", err)
@@ -74,7 +95,7 @@ func (r *FloatingIPReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 		}
 		if labelValue != requestedFIP {
 			patch := client.MergeFrom(node.DeepCopy())
-			node.Labels[r.AssignmentLabel] = requestedFIP
+			node.Labels[r.assignLabel] = requestedFIP
 			err := r.Patch(ctx, node, patch)
 			if err != nil {
 				return reconcile.Result{}, err
@@ -92,7 +113,7 @@ func (r *FloatingIPReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 
 	// Look up floating IP referenced by label. If it exists and is still assigned to the Node, unassign it.
 	if fipID, ok := r.fipsByAddr[labelValue]; ok && r.serversByFIP[fipID] == serverID {
-		action, _, err := r.HCloudClient.FloatingIP.Unassign(ctx, &hcloud.FloatingIP{ID: fipID})
+		action, _, err := r.hc.FloatingIP.Unassign(ctx, &hcloud.FloatingIP{ID: fipID})
 		err = r.waitForAction(ctx, action, err)
 		if err != nil {
 			return reconcile.Result{}, fmt.Errorf("error unassigning floating IP: %w", err)
@@ -106,7 +127,7 @@ func (r *FloatingIPReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 
 	// Whether we actually unassigned something or not, the label goes away now.
 	patch := client.MergeFrom(node.DeepCopy())
-	delete(node.Labels, r.AssignmentLabel)
+	delete(node.Labels, r.assignLabel)
 	err = r.Patch(ctx, node, patch)
 
 	// No floating IP assigned, no requeue requested here.
@@ -114,7 +135,7 @@ func (r *FloatingIPReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 }
 
 // Rechecks floating IP status from hcloud API if it's too stale.
-func (r *FloatingIPReconciler) refreshFloatingIPs(ctx context.Context) error {
+func (r *Reconciler) refreshFloatingIPs(ctx context.Context) error {
 	if time.Now().Sub(r.fipLastUpdate) < 15*time.Second {
 		return nil
 	}
@@ -122,8 +143,8 @@ func (r *FloatingIPReconciler) refreshFloatingIPs(ctx context.Context) error {
 	page := 1
 
 	for page > 0 {
-		fips, resp, err := r.HCloudClient.FloatingIP.List(ctx,
-			hcloud.FloatingIPListOpts{ListOpts: hcloud.ListOpts{Page: page, LabelSelector: r.IPLabelSelector}})
+		fips, resp, err := r.hc.FloatingIP.List(ctx,
+			hcloud.FloatingIPListOpts{ListOpts: hcloud.ListOpts{Page: page, LabelSelector: r.fipSelector}})
 		if err != nil {
 			return fmt.Errorf("error listing floating IPs: %w", err)
 		}
@@ -145,18 +166,18 @@ func (r *FloatingIPReconciler) refreshFloatingIPs(ctx context.Context) error {
 	return nil
 }
 
-func (r *FloatingIPReconciler) InjectClient(c client.Client) error {
-	r.Client = c
-	return nil
-}
-
-func (r *FloatingIPReconciler) waitForAction(ctx context.Context, action *hcloud.Action, err error) error {
+func (r *Reconciler) waitForAction(ctx context.Context, action *hcloud.Action, err error) error {
 	if err == nil {
-		_, errCh := r.HCloudClient.Action.WatchProgress(ctx, action)
+		_, errCh := r.hc.Action.WatchProgress(ctx, action)
 		select {
 		case <-ctx.Done():
 		case err = <-errCh:
 		}
 	}
 	return err
+}
+
+func (r *Reconciler) InjectClient(c client.Client) error {
+	r.Client = c
+	return nil
 }
