@@ -82,7 +82,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	err = natgateway.Run(mgr, natgateway.Options{FIPAssignLabel: fipLabel, SetupAnnotation: "setup"})
+	err = natgateway.Run(mgr, natgateway.Options{
+		FIPAssignLabel:  fipLabel,
+		Namespace:       podNamespace,
+		SetupAnnotation: "setup",
+		SetupJobTTL:     60,
+	})
 	if err != nil {
 		log.Error(err, "could not create natgateway controller")
 		os.Exit(1)
