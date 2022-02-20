@@ -4,9 +4,9 @@ build:
   artifacts:
   - image: the-nat-controller
     ko: {}
-    hooks:
-      before:
-      - command: [bash, build.sh]
+#    hooks:
+#      before:
+#      - command: [bash, build.sh]
 deploy:
   helm:
     releases:

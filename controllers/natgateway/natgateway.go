@@ -5,8 +5,9 @@ import (
 	"fmt"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	controllerruntime "sigs.k8s.io/controller-runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -17,10 +18,7 @@ import (
 )
 
 // +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch;patch
-// +kubebuilder:rbac:groups="batch",resources=jobs,verbs=get;list;watch
-// +kubebuilder:rbac:namespace="{{.Release.Namespace}}",groups="batch",resources=jobs,verbs=create;update;patch;delete
-
-var jobLabelPrefix = "thenatcontroller/"
+// +kubebuilder:rbac:namespace="{{.Release.Namespace}}",groups="batch",resources=jobs,verbs=get;list;watch;create;update;patch;delete
 
 var log = logf.Log.WithName("natgateway")
 
@@ -46,123 +44,172 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	}
 
 	assignedFIP, isAssigned := node.Labels[r.Config.FloatingIP.AssignmentLabel]
-	_, isSetup := node.Annotations[r.Config.NATGateway.SetupAnnotation]
+	configuredFIP, isConfigured := node.Annotations[r.Config.NATGateway.SetupAnnotation]
 
-	if isAssigned && !isSetup {
-		// Node has an IP assigned, but it's not setup to perform NAT for that IP yet.
-		return r.setup(ctx, node, assignedFIP)
+	if isConfigured && (!isAssigned || assignedFIP != configuredFIP) {
+		setupJob, err := r.getJob(ctx, "setup", &node, configuredFIP)
+		if err != nil {
+			return reconcile.Result{}, fmt.Errorf("failed to get setup job: %w", err)
+		}
+		teardownJob, err := r.getJob(ctx, "teardown", &node, configuredFIP)
+		if err != nil {
+			return reconcile.Result{}, fmt.Errorf("failed to get teardown job: %w", err)
+		}
+		if setupJob != nil {
+			err := r.Delete(ctx, setupJob, client.PropagationPolicy(metav1.DeletePropagationForeground))
+			if err != nil {
+				return reconcile.Result{}, fmt.Errorf("failed to delete setup job: %w", err)
+			}
+			log.Info("deleted stale setup job", "node", node.Name, "fip", configuredFIP)
+		}
+
+		if teardownJob == nil {
+			err := r.createJob(ctx, "teardown", configuredFIP, &node, &r.NATGateway.TeardownJob)
+			if err != nil {
+				return reconcile.Result{}, fmt.Errorf("failed to create teardown job: %w", err)
+			}
+			return reconcile.Result{}, nil
+		}
+
+		if teardownJob.Status.Succeeded > 0 {
+			patch := client.MergeFrom(node.DeepCopy())
+			delete(node.Annotations, r.NATGateway.SetupAnnotation)
+			err = r.Patch(ctx, &node, patch)
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+			log.Info("teardown complete, removing Node annotation", "node", node.Name, "ip", assignedFIP)
+			// TODO: Add Event here for Node?
+			return reconcile.Result{}, err
+		}
+	}
+
+	if isAssigned && !isConfigured {
+		setupJob, err := r.getJob(ctx, "setup", &node, assignedFIP)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+		teardownJob, err := r.getJob(ctx, "teardown", &node, assignedFIP)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		if teardownJob != nil {
+			err := r.Delete(ctx, teardownJob, client.PropagationPolicy(metav1.DeletePropagationForeground))
+			if err != nil {
+				return reconcile.Result{}, fmt.Errorf("failed to delete teardown job: %w", err)
+			}
+			log.Info("deleted stale teardown job", "node", node.Name, "fip", assignedFIP)
+		}
+
+		if setupJob == nil {
+			err := r.createJob(ctx, "setup", assignedFIP, &node, &r.NATGateway.SetupJob)
+			if err != nil {
+				return reconcile.Result{}, fmt.Errorf("failed to create setup job: %w", err)
+			}
+			return reconcile.Result{}, nil
+		}
+
+		if setupJob.Status.Succeeded > 0 {
+			patch := client.MergeFrom(node.DeepCopy())
+			node.Annotations[r.NATGateway.SetupAnnotation] = assignedFIP
+			err = r.Patch(ctx, &node, patch)
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+			log.Info("setup complete, annotated Node", "node", node.Name, "ip", assignedFIP)
+			// TODO: Add Event here for Node?
+		}
 	}
 
 	return reconcile.Result{}, nil
 }
 
+func (r *Reconciler) getJob(ctx context.Context, jobType string, node *corev1.Node, fip string) (*batchv1.Job, error) {
+	jobName := fmt.Sprintf("nat-%s-%s-%s", jobType, fip, node.Name)
+
+	job := &batchv1.Job{}
+	err := r.Get(ctx, types.NamespacedName{Namespace: r.CacheNamespace, Name: jobName}, job)
+	if errors.IsNotFound(err) {
+		err = nil
+		job = nil
+	}
+	return job, err
+}
+
 // Ensures that a Job is created to set up a given Node and IP. On success, the Node is annotated.
-// If setup Jobs for other IPs exist for the Node, they are deleted.
-func (r *Reconciler) setup(ctx context.Context, node corev1.Node, assignedFIP string) (reconcile.Result, error) {
-	jobList := batchv1.JobList{}
-	err := r.List(ctx, &jobList, client.MatchingLabels(map[string]string{
-		jobLabelPrefix + "type": "setup",
-		jobLabelPrefix + "node": node.Name,
-	}))
-	if err != nil {
-		return reconcile.Result{}, err
-	}
-	setupExists := false
-	setupDone := false
-	for _, job := range jobList.Items {
-		if jobIP, _ := job.Labels[jobLabelPrefix+"ip"]; jobIP != assignedFIP {
-			// A setup Job already exists for this Node, but for a different IP. Delete it.
-			err := r.Delete(ctx, &job)
-			if err != nil {
-				return reconcile.Result{}, err
-			}
-			log.Info("created setup Job", "job", job.Name)
-		} else {
-			setupExists = true
-			setupDone = job.Status.Succeeded > 0
-			break
-		}
-	}
-	if !setupExists {
-		jobLabels := map[string]string{
-			jobLabelPrefix + "type": "setup",
-			jobLabelPrefix + "node": node.Name,
-			jobLabelPrefix + "ip":   assignedFIP,
-		}
-
-		jobTTL := r.NATGateway.SetupJob.TTL
-		if jobTTL == 0 {
-			jobTTL = 3600
-		}
-
-		privileged := true
-		hostPathType := corev1.HostPathType("Directory")
-		job := batchv1.Job{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: "default",
-				Name:      fmt.Sprintf("nat-setup-%s-%s", node.Name, assignedFIP),
-				Labels:    jobLabels,
-			},
-			Spec: batchv1.JobSpec{
-				Template: corev1.PodTemplateSpec{
-					Spec: corev1.PodSpec{
-						Containers: []corev1.Container{
-							{
-								Name:  "setup",
-								Image: r.NATGateway.SetupJob.Image,
-								Command: []string{
-									"/bin/chroot", "/host", "/bin/bash", "-c", r.NATGateway.SetupJob.Script,
+// If Jobs of the same type, but for other IPs exist for the Node, they are deleted.
+// Returns true if the desired Job has completed.
+func (r *Reconciler) createJob(ctx context.Context, jobType string, fip string, node *corev1.Node, jobConfig *v1alpha1.Job) error {
+	privileged := true
+	hostPathType := corev1.HostPathType("Directory")
+	job := batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: r.CacheNamespace,
+			Name:      fmt.Sprintf("nat-%s-%s-%s", jobType, fip, node.Name),
+		},
+		Spec: batchv1.JobSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:  jobType,
+							Image: jobConfig.Image,
+							Command: []string{
+								"/bin/chroot", "/host", "/bin/bash", "-c", jobConfig.Script,
+							},
+							Env: []corev1.EnvVar{
+								{
+									Name:  "JOB_TYPE",
+									Value: jobType,
 								},
-								SecurityContext: &corev1.SecurityContext{
-									Privileged: &privileged,
+								{
+									Name:  "FLOATING_IP",
+									Value: fip,
 								},
-								VolumeMounts: []corev1.VolumeMount{
-									{
-										Name:      "host",
-										MountPath: "/host",
-									},
+							},
+							SecurityContext: &corev1.SecurityContext{
+								Privileged: &privileged,
+							},
+							VolumeMounts: []corev1.VolumeMount{
+								{
+									Name:      "host",
+									MountPath: "/host",
 								},
 							},
 						},
-						HostNetwork:   true,
-						NodeName:      node.Name,
-						RestartPolicy: corev1.RestartPolicyOnFailure,
-						Volumes: []corev1.Volume{
-							{
-								Name: "host",
-								VolumeSource: corev1.VolumeSource{
-									HostPath: &corev1.HostPathVolumeSource{
-										Type: &hostPathType,
-										Path: "/",
-									},
+					},
+					HostNetwork:   true,
+					NodeName:      node.Name,
+					RestartPolicy: corev1.RestartPolicyOnFailure,
+					Volumes: []corev1.Volume{
+						{
+							Name: "host",
+							VolumeSource: corev1.VolumeSource{
+								HostPath: &corev1.HostPathVolumeSource{
+									Type: &hostPathType,
+									Path: "/",
 								},
 							},
 						},
 					},
 				},
-				TTLSecondsAfterFinished: &jobTTL,
 			},
-		}
-		err := controllerruntime.SetControllerReference(&node, &job, r.Scheme())
-		if err != nil {
-			return reconcile.Result{}, err
-		}
-		err = r.Create(ctx, &job)
-		if err != nil {
-			return reconcile.Result{}, err
-		}
-		log.Info("created setup Job", "node", node.Name, "ip", assignedFIP)
+		},
 	}
-	if setupDone {
-		patch := client.MergeFrom(node.DeepCopy())
-		node.Annotations[r.NATGateway.SetupAnnotation] = assignedFIP
-		err := r.Patch(ctx, &node, patch)
-		if err != nil {
-			return reconcile.Result{}, err
-		}
-		log.Info("setup Job complete, annotated Node", "node", node.Name, "ip", assignedFIP)
+	if jobConfig.TTL > 0 {
+		job.Spec.TTLSecondsAfterFinished = &jobConfig.TTL
 	}
-	return reconcile.Result{}, nil
+	err := ctrl.SetControllerReference(node, &job, r.Scheme())
+	if err != nil {
+		return err
+	}
+	err = r.Create(ctx, &job)
+	if err != nil {
+		return err
+	}
+	log.Info("created Job", "node", node.Name, "type", jobType, "ip", fip)
+	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

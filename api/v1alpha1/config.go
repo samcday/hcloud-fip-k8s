@@ -48,9 +48,6 @@ type Job struct {
 	Script string `json:"script,omitempty"`
 }
 
-type NATSetup struct {
-}
-
 func init() {
 	SchemeBuilder.Register(&Config{})
 }

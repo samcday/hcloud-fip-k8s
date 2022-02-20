@@ -102,28 +102,37 @@ leaderElection:
   retryPeriod: 2    # in seconds
 
 floatingIP:
-  requestAnnotation: samcday.com/floating-ip
-  assignmentLabel: samcday.com/floating-ip
+  requestAnnotation: the-nat-controller.samcday.com/floating-ip
+  assignmentLabel: the-nat-controller.samcday.com/floating-ip
 
 natGateway:
   # selector: # TODO
-  setupAnnotation: samcday.com/nat-gateway
+  setupAnnotation: the-nat-controller.samcday.com/nat-gateway
   setupJob:
     ttl: 3600
     image: busybox:stable
     script: |-
       set -uexo pipefail
-      ip addr
+      ip addr add "${FLOATING_IP}" dev eth0
+      ip route replace default via 172.31.1.1 dev eth0 src "${FLOATING_IP}" metric 5
+      iptables -t nat -A POSTROUTING -s 10.0.0.0/8 -o eth0 -j SNAT --to-source "${FLOATING_IP}"
+      iptables -t filter -A FORWARD -o enp7s0 -j ACCEPT
+      iptables -t filter -A FORWARD -i enp7s0 -j ACCEPT
   teardownJob:
     ttl: 3600
     image: busybox:stable
-    script:
+    script: |-
       set -uexo pipefail
-
+      iptables -t filter -D FORWARD -i enp7s0 -j ACCEPT
+      iptables -t filter -D FORWARD -o enp7s0 -j ACCEPT
+      iptables -t nat -D POSTROUTING -s 10.0.0.0/8 -o eth0 -j SNAT --to-source "${FLOATING_IP}"
+      ip route del default via 172.31.1.1 dev eth0 src "${FLOATING_IP}" metric 5
+      ip addr del "${FLOATING_IP}"/32 dev eth0
 
 config: |-
   apiVersion: thenatcontroller.samcday.com/v1alpha1
   kind: Config
+  cacheNamespace: "{{ .Release.Namespace }}"
   health:
     healthProbeBindAddress: :8081
   metrics:
@@ -131,10 +140,11 @@ config: |-
   leaderElection:
     leaderElect: {{ .Values.leaderElection.enabled }}
     resourceName: {{ include "the-nat-controller.fullname" . }}
+    resourceNamespace: "{{ .Release.Namespace }}"
     leaseDuration: "{{ .Values.leaderElection.leaseDuration }}s"
   hcloud:
-    {{- toYaml .Values.hcloud.config | nindent 2 }}
+    {{- tpl (toYaml .Values.hcloud.config) . | nindent 2 }}
   floatingIP:
-    {{- toYaml .Values.floatingIP | nindent 2 }}
+    {{- tpl (toYaml .Values.floatingIP) . | nindent 2 }}
   natGateway:
-    {{- toYaml .Values.natGateway | nindent 2 }}
+    {{- tpl (toYaml .Values.natGateway) . | nindent 2 }}
