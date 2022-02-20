@@ -1,0 +1,18 @@
+apiVersion: skaffold/v2beta27
+kind: Config
+build:
+  artifacts:
+  - image: the-nat-controller
+    ko: {}
+    hooks:
+      before:
+      - command: [bash, build.sh]
+deploy:
+  helm:
+    releases:
+      - name: the-nat-controller
+        chartPath: charts/the-nat-controller
+        artifactOverrides:
+          image: the-nat-controller
+        imageStrategy:
+          helm: {}

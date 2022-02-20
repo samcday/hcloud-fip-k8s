@@ -7,13 +7,18 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	controllerruntime "sigs.k8s.io/controller-runtime"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"the-nat-controller/api/v1alpha1"
 )
+
+// +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch;patch
+// +kubebuilder:rbac:groups="batch",resources=jobs,verbs=get;list;watch
+// +kubebuilder:rbac:namespace="{{.Release.Namespace}}",groups="batch",resources=jobs,verbs=create;update;patch;delete
 
 var jobLabelPrefix = "thenatcontroller/"
 
@@ -28,21 +33,7 @@ type Options struct {
 
 type Reconciler struct {
 	client.Client
-	opts Options
-}
-
-func Run(mgr manager.Manager, opts Options) error {
-	rec := Reconciler{opts: opts}
-	return builder.ControllerManagedBy(mgr).
-		For(&corev1.Node{}, builder.WithPredicates(predicate.Or(
-			predicate.AnnotationChangedPredicate{},
-			predicate.LabelChangedPredicate{},
-		))).
-		Owns(&batchv1.Job{}, builder.WithPredicates(predicate.NewPredicateFuncs(func(object client.Object) bool {
-			job := object.(*batchv1.Job)
-			return job.Status.Succeeded > 0
-		}))).
-		Complete(&rec)
+	v1alpha1.Config
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
@@ -54,8 +45,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		return reconcile.Result{}, err
 	}
 
-	assignedFIP, isAssigned := node.Labels[r.opts.FIPAssignLabel]
-	_, isSetup := node.Annotations[r.opts.SetupAnnotation]
+	assignedFIP, isAssigned := node.Labels[r.Config.FloatingIP.AssignmentLabel]
+	_, isSetup := node.Annotations[r.Config.NATGateway.SetupAnnotation]
 
 	if isAssigned && !isSetup {
 		// Node has an IP assigned, but it's not setup to perform NAT for that IP yet.
@@ -99,11 +90,16 @@ func (r *Reconciler) setup(ctx context.Context, node corev1.Node, assignedFIP st
 			jobLabelPrefix + "ip":   assignedFIP,
 		}
 
+		jobTTL := r.NATGateway.SetupJob.TTL
+		if jobTTL == 0 {
+			jobTTL = 3600
+		}
+
 		privileged := true
 		hostPathType := corev1.HostPathType("Directory")
 		job := batchv1.Job{
 			ObjectMeta: metav1.ObjectMeta{
-				Namespace: r.opts.Namespace,
+				Namespace: "default",
 				Name:      fmt.Sprintf("nat-setup-%s-%s", node.Name, assignedFIP),
 				Labels:    jobLabels,
 			},
@@ -113,9 +109,9 @@ func (r *Reconciler) setup(ctx context.Context, node corev1.Node, assignedFIP st
 						Containers: []corev1.Container{
 							{
 								Name:  "setup",
-								Image: "busybox:stable",
+								Image: r.NATGateway.SetupJob.Image,
 								Command: []string{
-									"/bin/sh", "-c", "chroot /host apt-get update",
+									"/bin/chroot", "/host", "/bin/bash", "-c", r.NATGateway.SetupJob.Script,
 								},
 								SecurityContext: &corev1.SecurityContext{
 									Privileged: &privileged,
@@ -128,6 +124,7 @@ func (r *Reconciler) setup(ctx context.Context, node corev1.Node, assignedFIP st
 								},
 							},
 						},
+						HostNetwork:   true,
 						NodeName:      node.Name,
 						RestartPolicy: corev1.RestartPolicyOnFailure,
 						Volumes: []corev1.Volume{
@@ -143,7 +140,7 @@ func (r *Reconciler) setup(ctx context.Context, node corev1.Node, assignedFIP st
 						},
 					},
 				},
-				TTLSecondsAfterFinished: &r.opts.SetupJobTTL,
+				TTLSecondsAfterFinished: &jobTTL,
 			},
 		}
 		err := controllerruntime.SetControllerReference(&node, &job, r.Scheme())
@@ -158,7 +155,7 @@ func (r *Reconciler) setup(ctx context.Context, node corev1.Node, assignedFIP st
 	}
 	if setupDone {
 		patch := client.MergeFrom(node.DeepCopy())
-		node.Annotations[r.opts.SetupAnnotation] = assignedFIP
+		node.Annotations[r.NATGateway.SetupAnnotation] = assignedFIP
 		err := r.Patch(ctx, &node, patch)
 		if err != nil {
 			return reconcile.Result{}, err
@@ -168,7 +165,16 @@ func (r *Reconciler) setup(ctx context.Context, node corev1.Node, assignedFIP st
 	return reconcile.Result{}, nil
 }
 
-func (r *Reconciler) InjectClient(c client.Client) error {
-	r.Client = c
-	return nil
+// SetupWithManager sets up the controller with the Manager.
+func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
+	return builder.ControllerManagedBy(mgr).
+		For(&corev1.Node{}, builder.WithPredicates(predicate.Or(
+			predicate.AnnotationChangedPredicate{},
+			predicate.LabelChangedPredicate{},
+		))).
+		Owns(&batchv1.Job{}, builder.WithPredicates(predicate.NewPredicateFuncs(func(object client.Object) bool {
+			job := object.(*batchv1.Job)
+			return job.Status.Succeeded > 0
+		}))).
+		Complete(r)
 }

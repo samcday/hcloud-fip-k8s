@@ -1,0 +1,30 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "the-nat-controller.fullname" . }}
+  labels:
+    {{- include "the-nat-controller.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "the-nat-controller.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "the-nat-controller.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "the-nat-controller.fullname" . }}
+  labels:
+    {{- include "the-nat-controller.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "the-nat-controller.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "the-nat-controller.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
