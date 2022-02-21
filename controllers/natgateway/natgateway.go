@@ -22,13 +22,6 @@ import (
 
 var log = logf.Log.WithName("natgateway")
 
-type Options struct {
-	Namespace       string
-	FIPAssignLabel  string
-	SetupAnnotation string
-	SetupJobTTL     int32
-}
-
 type Reconciler struct {
 	client.Client
 	v1alpha1.Config
@@ -60,7 +53,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 			if err != nil {
 				return reconcile.Result{}, fmt.Errorf("failed to delete setup job: %w", err)
 			}
-			log.Info("deleted stale setup job", "node", node.Name, "fip", configuredFIP)
+			log.Info("deleted stale setup job", "job", setupJob.Name)
 		}
 
 		if teardownJob == nil {
@@ -137,69 +130,38 @@ func (r *Reconciler) getJob(ctx context.Context, jobType string, node *corev1.No
 	return job, err
 }
 
-// Ensures that a Job is created to set up a given Node and IP. On success, the Node is annotated.
-// If Jobs of the same type, but for other IPs exist for the Node, they are deleted.
-// Returns true if the desired Job has completed.
-func (r *Reconciler) createJob(ctx context.Context, jobType string, fip string, node *corev1.Node, jobConfig *v1alpha1.Job) error {
-	privileged := true
-	hostPathType := corev1.HostPathType("Directory")
+func (r *Reconciler) createJob(ctx context.Context, jobType string, fip string, node *corev1.Node, jobSpec *batchv1.JobSpec) error {
 	job := batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: r.CacheNamespace,
 			Name:      fmt.Sprintf("nat-%s-%s-%s", jobType, fip, node.Name),
 		},
-		Spec: batchv1.JobSpec{
-			Template: corev1.PodTemplateSpec{
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name:  jobType,
-							Image: jobConfig.Image,
-							Command: []string{
-								"/bin/chroot", "/host", "/bin/bash", "-c", jobConfig.Script,
-							},
-							Env: []corev1.EnvVar{
-								{
-									Name:  "JOB_TYPE",
-									Value: jobType,
-								},
-								{
-									Name:  "FLOATING_IP",
-									Value: fip,
-								},
-							},
-							SecurityContext: &corev1.SecurityContext{
-								Privileged: &privileged,
-							},
-							VolumeMounts: []corev1.VolumeMount{
-								{
-									Name:      "host",
-									MountPath: "/host",
-								},
-							},
-						},
-					},
-					HostNetwork:   true,
-					NodeName:      node.Name,
-					RestartPolicy: corev1.RestartPolicyOnFailure,
-					Volumes: []corev1.Volume{
-						{
-							Name: "host",
-							VolumeSource: corev1.VolumeSource{
-								HostPath: &corev1.HostPathVolumeSource{
-									Type: &hostPathType,
-									Path: "/",
-								},
-							},
-						},
-					},
-				},
-			},
-		},
+		Spec: *jobSpec,
 	}
-	if jobConfig.TTL > 0 {
-		job.Spec.TTLSecondsAfterFinished = &jobConfig.TTL
+	job.Spec.Template.Spec.NodeName = node.Name
+	job.Spec.Template.Spec.RestartPolicy = corev1.RestartPolicyOnFailure
+
+	for i := range job.Spec.Template.Spec.Containers {
+		job.Spec.Template.Spec.Containers[i].Env = append(job.Spec.Template.Spec.Containers[i].Env,
+			corev1.EnvVar{
+				Name:  "JOB_TYPE",
+				Value: jobType,
+			}, corev1.EnvVar{
+				Name:  "FLOATING_IP",
+				Value: fip,
+			})
 	}
+	for i := range jobSpec.Template.Spec.InitContainers {
+		jobSpec.Template.Spec.InitContainers[i].Env = append(jobSpec.Template.Spec.InitContainers[i].Env,
+			corev1.EnvVar{
+				Name:  "JOB_TYPE",
+				Value: jobType,
+			}, corev1.EnvVar{
+				Name:  "FLOATING_IP",
+				Value: fip,
+			})
+	}
+
 	err := ctrl.SetControllerReference(node, &job, r.Scheme())
 	if err != nil {
 		return err
@@ -214,14 +176,24 @@ func (r *Reconciler) createJob(ctx context.Context, jobType string, fip string, 
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return builder.ControllerManagedBy(mgr).
-		For(&corev1.Node{}, builder.WithPredicates(predicate.Or(
+	preds := []predicate.Predicate{
+		predicate.Or(
 			predicate.AnnotationChangedPredicate{},
 			predicate.LabelChangedPredicate{},
-		))).
-		Owns(&batchv1.Job{}, builder.WithPredicates(predicate.NewPredicateFuncs(func(object client.Object) bool {
-			job := object.(*batchv1.Job)
-			return job.Status.Succeeded > 0
-		}))).
+		),
+	}
+
+	if r.NATGateway.Selector != nil {
+		log.Info("watching Nodes with selector", "selector", metav1.FormatLabelSelector(r.NATGateway.Selector))
+		pred, err := predicate.LabelSelectorPredicate(*r.NATGateway.Selector)
+		if err != nil {
+			return err
+		}
+		preds = append(preds, pred)
+	}
+
+	return builder.ControllerManagedBy(mgr).
+		For(&corev1.Node{}, builder.WithPredicates(predicate.And(preds...))).
+		Owns(&batchv1.Job{}).
 		Complete(r)
 }

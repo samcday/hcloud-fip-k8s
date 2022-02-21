@@ -1,6 +1,7 @@
 package v1alpha1
 
 import (
+	batchv1 "k8s.io/api/batch/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	cfg "sigs.k8s.io/controller-runtime/pkg/config/v1alpha1"
 )
@@ -33,19 +34,10 @@ type FloatingIP struct {
 }
 
 type NATGateway struct {
-	Selector        string `json:"selector,omitempty"`
-	SetupAnnotation string `json:"setupAnnotation,omitempty"`
-	SetupJob        Job    `json:"setupJob,omitempty"`
-	TeardownJob     Job    `json:"teardownJob,omitempty"`
-}
-
-type Job struct {
-	// TTL indicates how long the Job should remain in the cluster, in seconds, before being cleaned up.
-	// Defaults to 1 hour.
-	// See https://kubernetes.io/docs/concepts/workloads/controllers/ttlafterfinished/
-	TTL    int32  `json:"ttl,omitempty"`
-	Image  string `json:"image,omitempty"`
-	Script string `json:"script,omitempty"`
+	Selector        *metav1.LabelSelector `json:"selector,omitempty"`
+	SetupAnnotation string                `json:"setupAnnotation,omitempty"`
+	SetupJob        batchv1.JobSpec       `json:"setupJob,omitempty"`
+	TeardownJob     batchv1.JobSpec       `json:"teardownJob,omitempty"`
 }
 
 func init() {

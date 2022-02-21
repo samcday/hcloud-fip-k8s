@@ -106,29 +106,86 @@ floatingIP:
   assignmentLabel: the-nat-controller.samcday.com/floating-ip
 
 natGateway:
-  # selector: # TODO
+# https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#resources-that-support-set-based-requirements
+#  selector:
+#    matchLabels:
+#      node-role.kubernetes.io/control-plane:
+#    matchExpressions:
+#    - {key: kubernetes.io/os, operator: In, values: [linux]}
+
   setupAnnotation: the-nat-controller.samcday.com/nat-gateway
   setupJob:
-    ttl: 3600
-    image: busybox:stable
-    script: |-
-      set -uexo pipefail
-      ip addr add "${FLOATING_IP}" dev eth0
-      ip route replace default via 172.31.1.1 dev eth0 src "${FLOATING_IP}" metric 5
-      iptables -t nat -A POSTROUTING -s 10.0.0.0/8 -o eth0 -j SNAT --to-source "${FLOATING_IP}"
-      iptables -t filter -A FORWARD -o enp7s0 -j ACCEPT
-      iptables -t filter -A FORWARD -i enp7s0 -j ACCEPT
+    ttlSecondsAfterFinished: 3600
+    template:
+      spec:
+        containers:
+        - name: setup
+          image: busybox:stable
+          command:
+          - /bin/chroot
+          - /host
+          - /bin/bash
+          - -c
+          - |-
+            set -uexo pipefail
+            ip addr replace "${FLOATING_IP}" dev eth0
+            ip route replace default via 172.31.1.1 dev eth0 src "${FLOATING_IP}" metric 5
+            iptables -t nat -A POSTROUTING -s 10.0.0.0/8 -o eth0 -j SNAT --to-source "${FLOATING_IP}"
+            iptables -t filter -A FORWARD -o enp7s0 -j ACCEPT
+            iptables -t filter -A FORWARD -i enp7s0 -j ACCEPT
+          securityContext:
+            privileged: true
+          volumeMounts:
+          - name: host
+            mountPath: /host
+        hostNetwork: true
+        restartPolicy: OnFailure
+        volumes:
+        - name: host
+          hostPath:
+            type: Directory
+            path: /
   teardownJob:
-    ttl: 3600
-    image: busybox:stable
-    script: |-
-      set -uexo pipefail
-      iptables -t filter -D FORWARD -i enp7s0 -j ACCEPT
-      iptables -t filter -D FORWARD -o enp7s0 -j ACCEPT
-      iptables -t nat -D POSTROUTING -s 10.0.0.0/8 -o eth0 -j SNAT --to-source "${FLOATING_IP}"
-      ip route del default via 172.31.1.1 dev eth0 src "${FLOATING_IP}" metric 5
-      ip addr del "${FLOATING_IP}"/32 dev eth0
-
+    ttlSecondsAfterFinished: 3600
+    template:
+      spec:
+        containers:
+        - name: teardown
+          image: busybox:stable
+          command:
+            - /bin/chroot
+            - /host
+            - /bin/bash
+            - -c
+            - |-
+              set -uexo pipefail
+              if iptables -t filter -C FORWARD -i enp7s0 -j ACCEPT; then
+                iptables -t filter -D FORWARD -i enp7s0 -j ACCEPT
+              fi
+              if iptables -t filter -C FORWARD -o enp7s0 -j ACCEPT; then
+                iptables -t filter -D FORWARD -o enp7s0 -j ACCEPT
+              fi
+              if iptables -t nat -C POSTROUTING -s 10.0.0.0/8 -o eth0 -j SNAT --to-source "${FLOATING_IP}"; then
+                iptables -t nat -D POSTROUTING -s 10.0.0.0/8 -o eth0 -j SNAT --to-source "${FLOATING_IP}"
+              fi
+              if [[ "$(ip route show default via 172.31.1.1 dev eth0 src "${FLOATING_IP}" metric 5 | wc -l)" -gt 0 ]]; then
+                ip route del default via 172.31.1.1 dev eth0 src "${FLOATING_IP}" metric 5
+              fi
+              if [[ "$(ip addr show "${FLOATING_IP}"/32 | wc -l)" -gt 0 ]]; then
+                ip addr del "${FLOATING_IP}"/32 dev eth0
+              fi
+          securityContext:
+            privileged: true
+          volumeMounts:
+          - name: host
+            mountPath: /host
+        hostNetwork: true
+        restartPolicy: OnFailure
+        volumes:
+          - name: host
+            hostPath:
+              type: Directory
+              path: /
 config: |-
   apiVersion: thenatcontroller.samcday.com/v1alpha1
   kind: Config

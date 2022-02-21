@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"k8s.io/apimachinery/pkg/labels"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"strconv"
 	"strings"
@@ -171,18 +171,24 @@ func (r *Reconciler) waitForAction(ctx context.Context, action *hcloud.Action, e
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
-	nodeSelector, err := labels.Parse(r.Config.NATGateway.Selector)
-	if err != nil {
-		return err
+	preds := []predicate.Predicate{
+		predicate.Or(
+			predicate.AnnotationChangedPredicate{},
+			predicate.LabelChangedPredicate{},
+		),
+	}
+
+	if r.NATGateway.Selector != nil {
+		log.Info("watching Nodes with selector", "selector", metav1.FormatLabelSelector(r.NATGateway.Selector))
+		pred, err := predicate.LabelSelectorPredicate(*r.NATGateway.Selector)
+		if err != nil {
+			return err
+		}
+		preds = append(preds, pred)
 	}
 
 	return ctrl.
 		NewControllerManagedBy(mgr).
-		For(&corev1.Node{}, builder.WithPredicates(predicate.And(
-			predicate.AnnotationChangedPredicate{},
-			predicate.NewPredicateFuncs(func(o client.Object) bool {
-				return nodeSelector.Matches(labels.Set(o.GetLabels()))
-			}))),
-		).
+		For(&corev1.Node{}, builder.WithPredicates(predicate.And(preds...))).
 		Complete(r)
 }
