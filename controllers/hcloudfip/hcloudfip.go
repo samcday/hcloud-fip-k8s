@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"strconv"
 	"strings"
@@ -29,6 +30,7 @@ type Reconciler struct {
 	v1alpha1.Config
 	HCloud *hcloud.Client
 
+	recorder      record.EventRecorder
 	fipLastUpdate time.Time
 	fipsByAddr    map[string]int
 	serversByFIP  map[int]int
@@ -75,6 +77,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 			}
 
 			log.Info("assigned floating IP to node", "floating-ip", requestedFIP, "node", node.Name)
+			r.recorder.Eventf(node, corev1.EventTypeNormal, "FloatingIPAssigned", "%s assigned to Node", requestedFIP)
 			r.serversByFIP[fipID] = serverID
 		}
 		if labelValue != requestedFIP {
@@ -103,10 +106,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 			return reconcile.Result{}, fmt.Errorf("error unassigning floating IP: %w", err)
 		}
 
+		r.recorder.Eventf(node, corev1.EventTypeNormal, "FloatingIPUnassigned", "%s unassigned from Node", requestedFIP)
 		log.Info("unassigned floating IP from node", "floating-ip", requestedFIP, "node", node.Name)
 		delete(r.serversByFIP, fipID)
-	} else {
-		// Should log a Warning event here.
 	}
 
 	// Whether we actually unassigned something or not, the label goes away now.
@@ -177,6 +179,8 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 			predicate.LabelChangedPredicate{},
 		),
 	}
+
+	r.recorder = mgr.GetEventRecorderFor("hcloudfip")
 
 	if r.NATGateway.Selector != nil {
 		log.Info("watching Nodes with selector", "selector", metav1.FormatLabelSelector(r.NATGateway.Selector))
