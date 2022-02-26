@@ -28,8 +28,6 @@ type Reconciler struct {
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
-	log.V(1).Info("starting reconcile", "request", req)
-
 	node := corev1.Node{}
 	err := r.Get(ctx, req.NamespacedName, &node)
 	if err != nil {

@@ -2,7 +2,7 @@ apiVersion: skaffold/v2beta27
 kind: Config
 build:
   artifacts:
-  - image: the-nat-controller
+  - image: samcday/the-nat-controller
     ko: {}
 #    hooks:
 #      before:
@@ -13,6 +13,6 @@ deploy:
       - name: the-nat-controller
         chartPath: chart/
         artifactOverrides:
-          image: the-nat-controller
+          image: samcday/the-nat-controller
         imageStrategy:
           helm: {}

@@ -66,7 +66,6 @@ func (r *Reconciler) reconcileFloatingIPs(ctx context.Context) error {
 			}
 			if len(nodes.Items) > 0 {
 				node := nodes.Items[0]
-				log.V(1).Info("floating IP is assigned to Node", "node", node.Name, "ip", addr)
 				if node.Spec.Unschedulable {
 					// Node is currently unschedulable. We should reassign the floating IP elsewhere.
 					needsAssign = true
@@ -82,6 +81,7 @@ func (r *Reconciler) reconcileFloatingIPs(ctx context.Context) error {
 		}
 		// If this floating IP needs to be reassigned, and we don't already have a chosen Node, then we search for one.
 		if needsAssign && chosenNode == nil {
+			log.V(1).Info("searching for candidates for floating IP assignment", "ip", addr)
 			var nodes corev1.NodeList
 			var opts []client.ListOption
 			if r.nodeSelector != nil {
@@ -91,24 +91,25 @@ func (r *Reconciler) reconcileFloatingIPs(ctx context.Context) error {
 				return err
 			}
 			var candidates []*corev1.Node
-			for _, node := range nodes.Items {
+			for idx, node := range nodes.Items {
 				if node.Spec.Unschedulable {
 					continue
 				}
 				if node.Labels[r.FloatingIP.Label] == addr {
 					// We've found a schedulable Node that is already requesting this floating IP. Automatic winner.
-					chosenNode = &node
+					chosenNode = &nodes.Items[idx]
 					break
 				}
 				if _, ok := node.Labels[r.FloatingIP.Label]; !ok {
 					// This Node doesn't already have a label, it's a candidate.
-					candidates = append(candidates, &node)
+					log.V(1).Info("found candidate", "ip", addr, "node", node.Name)
+					candidates = append(candidates, &nodes.Items[idx])
 				}
 			}
-			log.V(1).Info("completed candidate search for floating IP", "ip", addr, "count", len(candidates))
 			if chosenNode == nil && len(candidates) > 0 {
 				// If there's multiple candidates, just pick the first one arbitrarily.
 				chosenNode = candidates[0]
+				log.V(1).Info("chose candidate for floating IP", "ip", addr, "candidate", chosenNode.Name)
 			}
 		}
 		if needsAssign && chosenNode != nil {
@@ -284,7 +285,6 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	// Index Nodes by their parsed providerID (set by hccm), so we can conveniently lookup cached Nodes by server ID.
 	err := mgr.GetFieldIndexer().IndexField(context.Background(), &corev1.Node{}, "spec.hcloudID", func(object client.Object) []string {
 		if serverID, err := getNodeServerID(object.(*corev1.Node)); serverID != 0 {
-			log.V(1).Info("indexing hcloudID", "node", object.GetName(), "id", serverID)
 			return []string{strconv.Itoa(serverID)}
 		} else if err != nil {
 			log.Error(err, "failed to index hcloudID", "node", object.GetName())
