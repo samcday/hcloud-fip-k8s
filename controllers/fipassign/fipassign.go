@@ -9,6 +9,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/flowcontrol"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"strconv"
 	"strings"
@@ -109,7 +110,6 @@ func (r *Reconciler) reconcileFloatingIPs(ctx context.Context) error {
 			if chosenNode == nil && len(candidates) > 0 {
 				// If there's multiple candidates, just pick the first one arbitrarily.
 				chosenNode = candidates[0]
-				log.V(1).Info("chose candidate for floating IP", "ip", addr, "candidate", chosenNode.Name)
 			}
 		}
 		if needsAssign && chosenNode != nil {
@@ -180,21 +180,23 @@ func (r *Reconciler) getFloatingIPs(ctx context.Context) ([]*hcloud.FloatingIP, 
 			log.Error(err, "error listing floating IPs")
 			return nil, err
 		}
-		log.V(1).Info("requested floating IPs page from hcloud", "selector", r.FloatingIP.Selector, "page", page, "items", len(fipPage))
 
 		for _, fip := range fipPage {
-			log.V(1).Info("including floating IP", "ip", fip.IP.String())
 			fips = append(fips, fip)
 		}
 		page = resp.Meta.Pagination.Page + 1
 		lastPage = resp.Meta.Pagination.LastPage
 	}
+	log.V(1).Info("refreshed floating IP list", "selector", r.FloatingIP.Selector, "count", len(fips))
 	return fips, nil
 }
 
 func (r *Reconciler) assignFloatingIP(ctx context.Context, node *corev1.Node, fip *hcloud.FloatingIP) error {
 	serverID, err := getNodeServerID(node)
 
+	if err := r.limit.Wait(ctx); err != nil {
+		return err
+	}
 	action, _, err := r.HCloud.FloatingIP.Assign(ctx, fip, &hcloud.Server{ID: serverID})
 	err = r.waitForAction(ctx, action, err)
 	if err != nil {
@@ -297,7 +299,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 	return ctrl.
 		NewControllerManagedBy(mgr).
-		For(&corev1.Node{}).
+		For(&corev1.Node{}, builder.WithPredicates(preds...)).
 		Complete(r)
 }
 

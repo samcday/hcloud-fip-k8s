@@ -3,12 +3,13 @@ package main
 import (
 	"flag"
 	"github.com/hetznercloud/hcloud-go/hcloud"
+	"go.uber.org/zap/zapcore"
 	"k8s.io/apimachinery/pkg/runtime"
 	"os"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"the-nat-controller/api/v1alpha1"
 	"the-nat-controller/controllers/fipassign"
-	"the-nat-controller/controllers/natgateway"
+	"the-nat-controller/controllers/fipsetup"
 	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
@@ -44,6 +45,7 @@ func main() {
 			"Command-line flags override configuration from this file.")
 	logOpts := zap.Options{
 		Development: true,
+		TimeEncoder: zapcore.ISO8601TimeEncoder,
 	}
 	logOpts.BindFlags(flag.CommandLine)
 	flag.Parse()
@@ -101,11 +103,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&natgateway.Reconciler{
+	if err = (&fipsetup.Reconciler{
 		Client: mgr.GetClient(),
 		Config: ctrlConfig,
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "natgateway")
+		setupLog.Error(err, "unable to create controller", "controller", "fipsetup")
 		os.Exit(1)
 	}
 
@@ -123,21 +125,4 @@ func main() {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
-
-	//logf.SetLogger(zap.New(zap.UseDevMode(true), zap.Level(zapcore.DebugLevel)))
-	//var log = logf.Log.WithName("nat-controller")
-	//
-	//
-	//
-	//podName := os.Getenv("POD_NAME")
-	//if podName == "" {
-	//	log.Error(nil, "POD_NAME missing")
-	//	os.Exit(1)
-	//}
-	//podNamespace := os.Getenv("POD_NAMESPACE")
-	//if podNamespace == "" {
-	//	log.Error(nil, "POD_NAMESPACE missing")
-	//	os.Exit(1)
-	//}
-
 }

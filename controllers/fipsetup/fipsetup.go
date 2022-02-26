@@ -1,4 +1,4 @@
-package natgateway
+package fipsetup
 
 import (
 	"context"
@@ -20,7 +20,7 @@ import (
 // +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch;patch
 // +kubebuilder:rbac:namespace="{{.Release.Namespace}}",groups="batch",resources=jobs,verbs=get;list;watch;create;update;patch;delete
 
-var log = logf.Log.WithName("natgateway")
+var log = logf.Log.WithName("fipsetup")
 
 type Reconciler struct {
 	client.Client
@@ -31,7 +31,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	node := corev1.Node{}
 	err := r.Get(ctx, req.NamespacedName, &node)
 	if err != nil {
-		return reconcile.Result{}, err
+		return reconcile.Result{}, fmt.Errorf("failed to lookup Node: %w", err)
 	}
 
 	assignedFIP, isAssigned := node.Labels[r.Config.FloatingIP.Label]
@@ -47,30 +47,22 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 			return reconcile.Result{}, fmt.Errorf("failed to get teardown job: %w", err)
 		}
 		if setupJob != nil {
-			err := r.Delete(ctx, setupJob, client.PropagationPolicy(metav1.DeletePropagationForeground))
-			if err != nil {
+			if err := r.deleteJob(ctx, setupJob); err != nil {
 				return reconcile.Result{}, fmt.Errorf("failed to delete setup job: %w", err)
 			}
-			log.Info("deleted stale setup job", "job", setupJob.Name)
 		}
 
 		if teardownJob == nil {
-			err := r.createJob(ctx, "teardown", configuredFIP, &node, &r.FloatingIP.TeardownJob)
-			if err != nil {
+			if err := r.createJob(ctx, "teardown", configuredFIP, &node, &r.FloatingIP.TeardownJob); err != nil {
 				return reconcile.Result{}, fmt.Errorf("failed to create teardown job: %w", err)
 			}
 			return reconcile.Result{}, nil
 		}
 
 		if teardownJob.Status.Succeeded > 0 {
-			patch := client.MergeFrom(node.DeepCopy())
-			delete(node.Annotations, r.FloatingIP.SetupAnnotation)
-			err = r.Patch(ctx, &node, patch)
-			if err != nil {
+			if err := r.setAnnotation(ctx, node, ""); err != nil {
 				return reconcile.Result{}, err
 			}
-			log.Info("teardown complete, removing Node annotation", "node", node.Name, "ip", assignedFIP)
-			return reconcile.Result{}, err
 		}
 	}
 
@@ -85,29 +77,19 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		}
 
 		if teardownJob != nil {
-			err := r.Delete(ctx, teardownJob, client.PropagationPolicy(metav1.DeletePropagationForeground))
-			if err != nil {
+			if err := r.deleteJob(ctx, teardownJob); err != nil {
 				return reconcile.Result{}, fmt.Errorf("failed to delete teardown job: %w", err)
 			}
-			log.Info("deleted stale teardown job", "node", node.Name, "fip", assignedFIP)
 		}
 
 		if setupJob == nil {
-			err := r.createJob(ctx, "setup", assignedFIP, &node, &r.FloatingIP.SetupJob)
-			if err != nil {
-				return reconcile.Result{}, fmt.Errorf("failed to create setup job: %w", err)
-			}
-			return reconcile.Result{}, nil
+			return reconcile.Result{}, r.createJob(ctx, "setup", assignedFIP, &node, &r.FloatingIP.SetupJob)
 		}
 
 		if setupJob.Status.Succeeded > 0 {
-			patch := client.MergeFrom(node.DeepCopy())
-			node.Annotations[r.FloatingIP.SetupAnnotation] = assignedFIP
-			err = r.Patch(ctx, &node, patch)
-			if err != nil {
+			if err := r.setAnnotation(ctx, node, assignedFIP); err != nil {
 				return reconcile.Result{}, err
 			}
-			log.Info("setup complete, annotated Node", "node", node.Name, "ip", assignedFIP)
 		}
 	}
 
@@ -115,7 +97,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 }
 
 func (r *Reconciler) getJob(ctx context.Context, jobType string, node *corev1.Node, fip string) (*batchv1.Job, error) {
-	jobName := fmt.Sprintf("nat-%s-%s-%s", jobType, fip, node.Name)
+	jobName := fmt.Sprintf("fip-%s-%s-%s", jobType, fip, node.Name)
 
 	job := &batchv1.Job{}
 	err := r.Get(ctx, types.NamespacedName{Namespace: r.CacheNamespace, Name: jobName}, job)
@@ -130,7 +112,7 @@ func (r *Reconciler) createJob(ctx context.Context, jobType string, fip string, 
 	job := batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: r.CacheNamespace,
-			Name:      fmt.Sprintf("nat-%s-%s-%s", jobType, fip, node.Name),
+			Name:      fmt.Sprintf("fip-%s-%s-%s", jobType, fip, node.Name),
 		},
 		Spec: *jobSpec,
 	}
@@ -166,13 +148,23 @@ func (r *Reconciler) createJob(ctx context.Context, jobType string, fip string, 
 	if err != nil {
 		return err
 	}
-	log.Info("created Job", "node", node.Name, "type", jobType, "ip", fip)
+	log.V(1).Info(fmt.Sprintf("created %s Job", jobType), "node", node.Name, "ip", fip)
+	return nil
+}
+
+func (r *Reconciler) deleteJob(ctx context.Context, job *batchv1.Job) error {
+	err := r.Delete(ctx, job, client.PropagationPolicy(metav1.DeletePropagationForeground))
+	if errors.IsNotFound(err) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	log.V(1).Info("deleted job", "job", job.Name)
 	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
-
 	preds := []predicate.Predicate{
 		predicate.Or(
 			predicate.AnnotationChangedPredicate{},
@@ -193,4 +185,23 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&corev1.Node{}, builder.WithPredicates(predicate.And(preds...))).
 		Owns(&batchv1.Job{}).
 		Complete(r)
+}
+
+func (r *Reconciler) setAnnotation(ctx context.Context, node corev1.Node, fip string) error {
+	patch := client.MergeFrom(node.DeepCopy())
+	if fip != "" {
+		node.Annotations[r.FloatingIP.SetupAnnotation] = fip
+	} else {
+		delete(node.Annotations, r.FloatingIP.SetupAnnotation)
+	}
+	err := r.Patch(ctx, &node, patch)
+	if err != nil {
+		return err
+	}
+	if fip != "" {
+		log.Info("setup complete, annotated Node", "node", node.Name, "ip", fip)
+	} else {
+		log.Info("teardown complete, removed annotation from Node", "node", node.Name)
+	}
+	return nil
 }

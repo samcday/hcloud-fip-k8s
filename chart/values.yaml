@@ -103,9 +103,12 @@ leaderElection:
 
 floatingIP:
   # Limit floating IPs to be managed to given label selector. See https://docs.hetzner.cloud/#label-selector
-  selector: role=nat
-  label: node-role.kubernetes.io/nat-gateway
-  setupAnnotation: samcday.com/nat-gateway
+  # selector: role=nat
+  # label: node-role.kubernetes.io/nat-gateway
+  # setupAnnotation: samcday.com/nat-gateway
+  selector: role=vip
+  label: node-role.kubernetes.io/vip
+  setupAnnotation: samcday.com/vip
   setupJob:
     ttlSecondsAfterFinished: 3600
     template:
