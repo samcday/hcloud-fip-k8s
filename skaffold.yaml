@@ -11,7 +11,7 @@ deploy:
   helm:
     releases:
       - name: the-nat-controller
-        chartPath: charts/the-nat-controller
+        chartPath: chart/
         artifactOverrides:
           image: the-nat-controller
         imageStrategy:

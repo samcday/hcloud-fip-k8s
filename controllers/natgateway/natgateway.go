@@ -36,8 +36,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		return reconcile.Result{}, err
 	}
 
-	assignedFIP, isAssigned := node.Labels[r.Config.FloatingIP.AssignmentLabel]
-	configuredFIP, isConfigured := node.Annotations[r.Config.NATGateway.SetupAnnotation]
+	assignedFIP, isAssigned := node.Labels[r.Config.FloatingIP.Label]
+	configuredFIP, isConfigured := node.Annotations[r.Config.FloatingIP.SetupAnnotation]
 
 	if isConfigured && (!isAssigned || assignedFIP != configuredFIP) {
 		setupJob, err := r.getJob(ctx, "setup", &node, configuredFIP)
@@ -57,7 +57,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		}
 
 		if teardownJob == nil {
-			err := r.createJob(ctx, "teardown", configuredFIP, &node, &r.NATGateway.TeardownJob)
+			err := r.createJob(ctx, "teardown", configuredFIP, &node, &r.FloatingIP.TeardownJob)
 			if err != nil {
 				return reconcile.Result{}, fmt.Errorf("failed to create teardown job: %w", err)
 			}
@@ -66,13 +66,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 
 		if teardownJob.Status.Succeeded > 0 {
 			patch := client.MergeFrom(node.DeepCopy())
-			delete(node.Annotations, r.NATGateway.SetupAnnotation)
+			delete(node.Annotations, r.FloatingIP.SetupAnnotation)
 			err = r.Patch(ctx, &node, patch)
 			if err != nil {
 				return reconcile.Result{}, err
 			}
 			log.Info("teardown complete, removing Node annotation", "node", node.Name, "ip", assignedFIP)
-			// TODO: Add Event here for Node?
 			return reconcile.Result{}, err
 		}
 	}
@@ -96,7 +95,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		}
 
 		if setupJob == nil {
-			err := r.createJob(ctx, "setup", assignedFIP, &node, &r.NATGateway.SetupJob)
+			err := r.createJob(ctx, "setup", assignedFIP, &node, &r.FloatingIP.SetupJob)
 			if err != nil {
 				return reconcile.Result{}, fmt.Errorf("failed to create setup job: %w", err)
 			}
@@ -105,13 +104,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 
 		if setupJob.Status.Succeeded > 0 {
 			patch := client.MergeFrom(node.DeepCopy())
-			node.Annotations[r.NATGateway.SetupAnnotation] = assignedFIP
+			node.Annotations[r.FloatingIP.SetupAnnotation] = assignedFIP
 			err = r.Patch(ctx, &node, patch)
 			if err != nil {
 				return reconcile.Result{}, err
 			}
 			log.Info("setup complete, annotated Node", "node", node.Name, "ip", assignedFIP)
-			// TODO: Add Event here for Node?
 		}
 	}
 
@@ -176,6 +174,7 @@ func (r *Reconciler) createJob(ctx context.Context, jobType string, fip string, 
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
+
 	preds := []predicate.Predicate{
 		predicate.Or(
 			predicate.AnnotationChangedPredicate{},
@@ -183,9 +182,9 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		),
 	}
 
-	if r.NATGateway.Selector != nil {
-		log.Info("watching Nodes with selector", "selector", metav1.FormatLabelSelector(r.NATGateway.Selector))
-		pred, err := predicate.LabelSelectorPredicate(*r.NATGateway.Selector)
+	if r.FloatingIP.NodeSelector != nil {
+		log.Info("watching Nodes with selector", "selector", metav1.FormatLabelSelector(r.FloatingIP.NodeSelector))
+		pred, err := predicate.LabelSelectorPredicate(*r.FloatingIP.NodeSelector)
 		if err != nil {
 			return err
 		}

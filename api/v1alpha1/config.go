@@ -15,7 +15,6 @@ type Config struct {
 
 	HCloud     HCloud     `json:"hcloud,omitempty"`
 	FloatingIP FloatingIP `json:"floatingIP,omitempty"`
-	NATGateway NATGateway `json:"natGateway,omitempty"`
 }
 
 type HCloud struct {
@@ -28,16 +27,13 @@ type HCloud struct {
 }
 
 type FloatingIP struct {
-	Selector          string `json:"selector,omitempty"`
-	AssignmentLabel   string `json:"assignmentLabel,omitempty"`
-	RequestAnnotation string `json:"requestAnnotation,omitempty"`
-}
-
-type NATGateway struct {
-	Selector        *metav1.LabelSelector `json:"selector,omitempty"`
+	Selector        string                `json:"selector,omitempty"`
+	Label           string                `json:"label,omitempty"`
+	NodeSelector    *metav1.LabelSelector `json:"nodeSelector,omitempty"`
 	SetupAnnotation string                `json:"setupAnnotation,omitempty"`
 	SetupJob        batchv1.JobSpec       `json:"setupJob,omitempty"`
 	TeardownJob     batchv1.JobSpec       `json:"teardownJob,omitempty"`
+	Interval        int                   `json:"interval,omitempty"`
 }
 
 func init() {

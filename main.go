@@ -7,7 +7,7 @@ import (
 	"os"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"the-nat-controller/api/v1alpha1"
-	"the-nat-controller/controllers/hcloudfip"
+	"the-nat-controller/controllers/fipassign"
 	"the-nat-controller/controllers/natgateway"
 	"time"
 
@@ -92,19 +92,12 @@ func main() {
 
 	hcloudClient := hcloud.NewClient(opts...)
 
-	if err = (&hcloudfip.Reconciler{
+	if err = (&fipassign.Reconciler{
 		Client: mgr.GetClient(),
 		Config: ctrlConfig,
 		HCloud: hcloudClient,
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "hcloudfip")
-		os.Exit(1)
-	}
-
-	if err = (&natgateway.Reconciler{
-		Client: mgr.GetClient(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "natgateway")
+		setupLog.Error(err, "unable to create controller", "controller", "fipassign")
 		os.Exit(1)
 	}
 
@@ -112,7 +105,7 @@ func main() {
 		Client: mgr.GetClient(),
 		Config: ctrlConfig,
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "could not create natgateway controller")
+		setupLog.Error(err, "unable to create controller", "controller", "natgateway")
 		os.Exit(1)
 	}
 
