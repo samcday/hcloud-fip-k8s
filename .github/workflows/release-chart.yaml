@@ -24,5 +24,6 @@ jobs:
           helm package chart -d chart/repo
           cd chart/repo
           helm repo index . --url=https://samcday.github.io/hcloud/fip-k8s/
-          git commit -am "$TAG"
+          git add .
+          git commit -m "$TAG"
           git push
