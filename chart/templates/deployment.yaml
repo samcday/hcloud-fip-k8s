@@ -39,6 +39,7 @@ spec:
           args:
             - -config
             - /config/config.yaml
+            {{- toYaml .Values.extraArgs | nindent 12 }}
           env:
             {{- toYaml .Values.env | nindent 12 }}
           ports:
@@ -64,6 +65,10 @@ spec:
           volumeMounts:
           - name: config
             mountPath: /config
+          {{ range $vol := .Values.extraVolumes -}}
+          - name: {{ required "extraVolumes[].name required" $vol.name }}
+            mountPath: {{ required "extraVolumes[].mountPath required" $vol.mountPath }}
+          {{ end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -80,3 +85,7 @@ spec:
       - name: config
         configMap:
           name: {{ include "hcloud-fip-k8s.fullname" . }}-config
+      {{ range $index, $vol := .Values.extraVolumes -}}
+      - name: {{ $vol.name }}
+        {{- toYaml (required "extraVolumes[].source missing" $vol.source) | nindent 8 }}
+      {{- end }}

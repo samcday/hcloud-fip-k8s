@@ -54,6 +54,15 @@ tolerations: []
 
 affinity: {}
 
+extraArgs: []
+
+extraVolumes: []
+# - name: secret
+#   mountPath: /opt/secret
+#   source:
+#     secret:
+#       secretName: foo
+
 metrics:
   # the controller will provide metrics on this port
   port: 8080
