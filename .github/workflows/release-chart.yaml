@@ -1,0 +1,26 @@
+name: Release Chart
+on:
+  push:
+    tags: ['*']
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+      - name: Install Helm
+        uses: azure/setup-helm@v1
+        with:
+          version: v3.7.1
+      - name: Release chart
+        run: |
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+          git worktree add chart/repo gh-pages
+          helm package chart -d chart/repo
+          cd chart/repo
+          helm repo index . --url=https://samcday.github.io/hcloud/fip-k8s/
+          git commit -am "$TAG"
+          git push
