@@ -23,7 +23,7 @@ jobs:
           git worktree add chart/repo gh-pages
           helm package chart -d chart/repo
           cd chart/repo
-          helm repo index . --url=https://samcday.github.io/hcloud/fip-k8s/
+          helm repo index . --url=https://samcday.github.io/hcloud-fip-k8s/
           git add .
           git commit -m "$TAG"
           git push
