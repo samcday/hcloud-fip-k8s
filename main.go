@@ -84,12 +84,19 @@ func main() {
 	}
 
 	if ctrlConfig.HCloud.Endpoint != "" {
-		setupLog.Info("using custom hcloud endpoint")
+		setupLog.Info("set hcloud endpoint")
 		opts = append(opts, hcloud.WithEndpoint(ctrlConfig.HCloud.Endpoint))
 	}
 	if ctrlConfig.HCloud.PollInterval > 0 {
-		setupLog.Info("using custom hcloud poll interval", "interval", ctrlConfig.HCloud.PollInterval)
+		setupLog.Info("set hcloud poll interval", "interval", ctrlConfig.HCloud.PollInterval)
 		opts = append(opts, hcloud.WithPollInterval(time.Duration(ctrlConfig.HCloud.PollInterval)*time.Millisecond))
+	}
+
+	appName := ctrlConfig.HCloud.ApplicationName
+	appVersion := ctrlConfig.HCloud.ApplicationVersion
+	if appName != "" && appVersion != "" {
+		setupLog.Info("set hcloud user-agent", "name", appName, "version", appVersion)
+		opts = append(opts, hcloud.WithApplication(appName, appVersion))
 	}
 
 	hcloudClient := hcloud.NewClient(opts...)

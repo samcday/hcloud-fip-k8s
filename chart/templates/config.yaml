@@ -6,4 +6,6 @@ metadata:
     {{- include "hcloud-fip-k8s.labels" . | nindent 4 }}
 data:
   config.yaml: |-
-    {{- tpl .Values.config . | nindent 4 }}
+    apiVersion: hcloud-fip-k8s.samcday.com/v1alpha1
+    kind: Config
+    {{- tpl (toYaml .Values.config) . | nindent 4 }}

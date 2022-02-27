@@ -39,8 +39,7 @@ spec:
             - -config
             - /config/config.yaml
           env:
-            - name: HCLOUD_TOKEN
-{{ toYaml .Values.hcloud.token | indent 14 }}
+            {{- toYaml .Values.env | indent 12 }}
           ports:
             - name: http
               containerPort: 80

@@ -23,7 +23,9 @@ type HCloud struct {
 	Endpoint string `json:"endpoint,omitempty"`
 	// PollInterval is the interval in milliseconds to poll the hcloud API for action progress
 	// see https://pkg.go.dev/github.com/hetznercloud/hcloud-go/hcloud?#WithPollInterval
-	PollInterval int64 `json:"pollInterval,omitempty"`
+	PollInterval       int64  `json:"pollInterval,omitempty"`
+	ApplicationName    string `json:"applicationName,omitempty"`
+	ApplicationVersion string `json:"applicationVersion,omitempty"`
 }
 
 type FloatingIP struct {
