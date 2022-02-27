@@ -15,6 +15,8 @@ jobs:
         with:
           version: v3.7.1
       - name: Release chart
+        env:
+          TAG: "${{ github.ref_name}}"
         run: |
           git config user.name "$GITHUB_ACTOR"
           git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
