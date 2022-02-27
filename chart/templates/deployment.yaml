@@ -1,16 +1,16 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "the-nat-controller.fullname" . }}
+  name: {{ include "hcloud-fip-k8s.fullname" . }}
   labels:
-    {{- include "the-nat-controller.labels" . | nindent 4 }}
+    {{- include "hcloud-fip-k8s.labels" . | nindent 4 }}
 spec:
   {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}
   {{- end }}
   selector:
     matchLabels:
-      {{- include "the-nat-controller.selectorLabels" . | nindent 6 }}
+      {{- include "hcloud-fip-k8s.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       annotations:
@@ -19,13 +19,13 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
-        {{- include "the-nat-controller.selectorLabels" . | nindent 8 }}
+        {{- include "hcloud-fip-k8s.selectorLabels" . | nindent 8 }}
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "the-nat-controller.serviceAccountName" . }}
+      serviceAccountName: {{ include "hcloud-fip-k8s.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       terminationGracePeriodSeconds: {{ .Values.leaderElection.renewDeadline }}
@@ -77,4 +77,4 @@ spec:
       volumes:
       - name: config
         configMap:
-          name: {{ include "the-nat-controller.fullname" . }}-config
+          name: {{ include "hcloud-fip-k8s.fullname" . }}-config

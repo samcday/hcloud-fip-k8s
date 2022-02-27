@@ -3,7 +3,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   creationTimestamp: null
-  name: '{{ include "the-nat-controller.fullname" . }}'
+  name: '{{ include "hcloud-fip-k8s.fullname" . }}'
 rules:
 - apiGroups:
   - ""
@@ -19,7 +19,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   creationTimestamp: null
-  name: '{{ include "the-nat-controller.fullname" . }}'
+  name: '{{ include "hcloud-fip-k8s.fullname" . }}'
   namespace: '{{.Release.Namespace}}'
 rules:
 - apiGroups:

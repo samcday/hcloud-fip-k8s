@@ -4,12 +4,12 @@ import (
 	"flag"
 	"github.com/hetznercloud/hcloud-go/hcloud"
 	"go.uber.org/zap/zapcore"
+	"hcloud-fip-k8s/api/v1alpha1"
+	"hcloud-fip-k8s/controllers/fipassign"
+	"hcloud-fip-k8s/controllers/fipsetup"
 	"k8s.io/apimachinery/pkg/runtime"
 	"os"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
-	"the-nat-controller/api/v1alpha1"
-	"the-nat-controller/controllers/fipassign"
-	"the-nat-controller/controllers/fipsetup"
 	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)

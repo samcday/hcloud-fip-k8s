@@ -8,7 +8,7 @@ import (
 
 // +kubebuilder:object:root=true
 
-// Config is the configuration for the-nat-controller
+// Config is the configuration for hcloud-fip-k8s
 type Config struct {
 	metav1.TypeMeta                        `json:",inline"`
 	cfg.ControllerManagerConfigurationSpec `json:",inline"`

@@ -3,6 +3,7 @@ package fipassign
 import (
 	"context"
 	"fmt"
+	"hcloud-fip-k8s/api/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -13,7 +14,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"strconv"
 	"strings"
-	"the-nat-controller/api/v1alpha1"
 	"time"
 
 	"github.com/hetznercloud/hcloud-go/hcloud"
@@ -256,14 +256,14 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 				return nil
 			}
 			// Consume any redundant work requests.
-		L:
-			for {
+			done := false
+			for !done {
 				select {
 				case <-r.work:
 				case <-ctx.Done():
 					return nil
 				default:
-					break L
+					done = true
 				}
 			}
 			err := r.reconcileFloatingIPs(ctx)

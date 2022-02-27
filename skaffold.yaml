@@ -2,7 +2,7 @@ apiVersion: skaffold/v2beta27
 kind: Config
 build:
   artifacts:
-  - image: samcday/the-nat-controller
+  - image: samcday/hcloud-fip-k8s
     ko: {}
 #    hooks:
 #      before:
@@ -10,9 +10,9 @@ build:
 deploy:
   helm:
     releases:
-      - name: the-nat-controller
+      - name: hcloud-fip-k8s
         chartPath: chart/
         artifactOverrides:
-          image: samcday/the-nat-controller
+          image: samcday/hcloud-fip-k8s
         imageStrategy:
           helm: {}

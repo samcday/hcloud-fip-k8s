@@ -1,11 +1,11 @@
-# Default values for the-nat-controller.
+# Default values for hcloud-fip-k8s.
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
 
 replicaCount: 1
 
 image:
-  repository: samcday/the-nat-controller
+  repository: samcday/hcloud-fip-k8s
   pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
   tag: ""

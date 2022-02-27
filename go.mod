@@ -1,4 +1,4 @@
-module the-nat-controller
+module hcloud-fip-k8s
 
 go 1.17
 

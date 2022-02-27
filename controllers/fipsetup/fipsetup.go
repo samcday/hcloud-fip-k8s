@@ -3,6 +3,7 @@ package fipsetup
 import (
 	"context"
 	"fmt"
+	"hcloud-fip-k8s/api/v1alpha1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -14,7 +15,6 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"the-nat-controller/api/v1alpha1"
 )
 
 // +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch;patch
