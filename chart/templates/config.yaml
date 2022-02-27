@@ -2,10 +2,9 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: {{ include "hcloud-fip-k8s.fullname" . }}-config
+  namespace: {{ .Release.Namespace }}
   labels:
     {{- include "hcloud-fip-k8s.labels" . | nindent 4 }}
 data:
   config.yaml: |-
-    apiVersion: hcloud-fip-k8s.samcday.com/v1alpha1
-    kind: Config
-    {{- tpl (toYaml .Values.config) . | nindent 4 }}
+    {{- tpl .Values.config . | nindent 4 }}

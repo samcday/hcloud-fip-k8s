@@ -1,4 +1,4 @@
-The controller is now deployed. In the next few moments, it will begin managing the assignment state of
-{{- if .Values.floatingIP.selector }}floating IPs matching the label {{ .Values.floatingIP.selector }}
-{{- else }}*ALL* floating IPs available in your account
-{{- end }}.
+The controller is now deployed. In the next few moments, it will begin managing the assignment of floating IPs
+matching the label "{{ required "floating IP selector required" .Values.floatingIP.selector }}". You can see a list of those by running something like this:
+
+$ hcloud floating-ip list -l {{ .Values.floatingIP.selector }}

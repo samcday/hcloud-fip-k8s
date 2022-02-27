@@ -10,6 +10,9 @@ imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 
+rbac:
+  create: true
+
 serviceAccount:
   create: true
   annotations: {}
@@ -51,87 +54,102 @@ tolerations: []
 
 affinity: {}
 
-config:
+metrics:
+  # the controller will provide metrics on this port
+  port: 8080
+  # if enabled, a PodMonitor will be deployed to scrape the controller metrics
+  podMonitor: true
+
+hcloud:
+  # Default way to provide token is to use the well known Secret location (see env: above)
+  # You can provide a literal here, if you really want.
+  # token: hunter2
+  # see: https://pkg.go.dev/github.com/hetznercloud/hcloud-go/hcloud?#ClientOption
+  # pollInterval: 500 # milliseconds
+  # endpoint: https://api.hetzner.cloud/v1
+  applicationName: "{{ .Chart.Name }}"
+  applicationVersion: "{{ .Chart.Version }}"
+leaderElection:
+  leaseDuration: 15 # in seconds
+  renewDeadline: 10 # in seconds
+  retryPeriod: 2    # in seconds
+
+floatingIP:
+  # The following fields MUST be set.
+  # Limit floating IPs to be managed to given label selector. See https://docs.hetzner.cloud/#label-selector
+  selector: # role=egress
+  label: # node-role.kubernetes.io/egress
+  setupAnnotation: # hcloud-fip-k8s.samcday.com/egress
+  setupJob:
+    ttlSecondsAfterFinished: 3600
+    template:
+      spec:
+        containers:
+        - name: setup
+          image: busybox:stable
+          command:
+          - /bin/chroot
+          - /host
+          - /bin/bash
+          - -c
+          - |-
+            set -uexo pipefail
+            ip addr replace "${FLOATING_IP}" dev eth0
+          securityContext:
+            privileged: true
+          volumeMounts:
+          - name: host
+            mountPath: /host
+        hostNetwork: true
+        restartPolicy: OnFailure
+        volumes:
+        - name: host
+          hostPath:
+            type: Directory
+            path: /
+  teardownJob:
+    ttlSecondsAfterFinished: 3600
+    template:
+      spec:
+        containers:
+        - name: teardown
+          image: busybox:stable
+          command:
+            - /bin/chroot
+            - /host
+            - /bin/bash
+            - -c
+            - |-
+              set -uexo pipefail
+              ip addr del "${FLOATING_IP}"/32 dev eth0 || true
+          securityContext:
+            privileged: true
+          volumeMounts:
+          - name: host
+            mountPath: /host
+        hostNetwork: true
+        restartPolicy: OnFailure
+        volumes:
+          - name: host
+            hostPath:
+              type: Directory
+              path: /
+config: |-
+  apiVersion: hcloud-fip-k8s.samcday.com/v1alpha1
+  kind: Config
   cacheNamespace: "{{ .Release.Namespace }}"
-  floatingIP:
-    # Limit floating IPs to be managed to given label selector. See https://docs.hetzner.cloud/#label-selector
-    # selector: role=nat
-    # label: node-role.kubernetes.io/nat-gateway
-    # setupAnnotation: example.samcday.com/nat-gateway
-    selector: role=vip
-    label: node-role.kubernetes.io/vip
-    setupAnnotation: samcday.com/vip
-    setupJob:
-      ttlSecondsAfterFinished: 3600
-      template:
-        spec:
-          containers:
-            - name: setup
-              image: busybox:stable
-              command:
-                - /bin/chroot
-                - /host
-                - /bin/bash
-                - -c
-                - |-
-                  set -uexo pipefail
-                  ip addr replace "${FLOATING_IP}" dev eth0
-              securityContext:
-                privileged: true
-              volumeMounts:
-                - name: host
-                  mountPath: /host
-          hostNetwork: true
-          restartPolicy: OnFailure
-          volumes:
-            - name: host
-              hostPath:
-                type: Directory
-                path: /
-    teardownJob:
-      ttlSecondsAfterFinished: 3600
-      template:
-        spec:
-          containers:
-            - name: teardown
-              image: busybox:stable
-              command:
-                - /bin/chroot
-                - /host
-                - /bin/bash
-                - -c
-                - |-
-                  set -uexo pipefail
-                  ip addr del "${FLOATING_IP}"/32 dev eth0 || true
-              securityContext:
-                privileged: true
-              volumeMounts:
-                - name: host
-                  mountPath: /host
-          hostNetwork: true
-          restartPolicy: OnFailure
-          volumes:
-            - name: host
-              hostPath:
-                type: Directory
-                path: /
-  hcloud:
-    # Default way to provide token is to use the well known Secret location
-    # But you can also specify the token directly, if you wish.
-    # token: hunter2
-    # see: https://pkg.go.dev/github.com/hetznercloud/hcloud-go/hcloud?#ClientOption
-    # pollInterval: 500 # milliseconds
-    # endpoint: https://api.hetzner.cloud/v1
-     applicationName: hcloud-fip-k8s
-     applicationVersion: "{{ .Chart.Version }}"
   health:
     healthProbeBindAddress: :8081
   metrics:
-    bindAddress: 127.0.0.1:8080
+    bindAddress: :{{ .Values.metrics.port }}
   leaderElection:
-    leaderElect: {{ gt .Values.replicas 1 }}
-    resourceName: "{{ include "hcloud-fip-k8s.fullname" . }}"
+    leaderElect: {{ gt (int .Values.replicas) 1 }}
+    resourceName: {{ include "hcloud-fip-k8s.fullname" . }}
     resourceNamespace: "{{ .Release.Namespace }}"
-    leaseDuration: 15
-    renewDeadline: 10
-    retryPeriod: 2
+    leaseDuration: "{{ .Values.leaderElection.leaseDuration }}s"
+    renewDeadline: "{{ .Values.leaderElection.renewDeadline }}s"
+    retryPeriod: "{{ .Values.leaderElection.retryPeriod }}s"
+  hcloud:
+    {{- tpl (toYaml .Values.hcloud) . | nindent 2 }}
+  floatingIP:
+    {{- tpl (toYaml .Values.floatingIP) . | nindent 2 }}

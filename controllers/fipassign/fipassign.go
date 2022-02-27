@@ -2,6 +2,7 @@ package fipassign
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"hcloud-fip-k8s/api/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -107,9 +108,13 @@ func (r *Reconciler) reconcileFloatingIPs(ctx context.Context) error {
 					candidates = append(candidates, &nodes.Items[idx])
 				}
 			}
-			if chosenNode == nil && len(candidates) > 0 {
-				// If there's multiple candidates, just pick the first one arbitrarily.
-				chosenNode = candidates[0]
+			if len(candidates) > 0 {
+				if chosenNode == nil {
+					// If there's multiple candidates, just pick the first one arbitrarily.
+					chosenNode = candidates[0]
+				}
+			} else {
+				log.Info("no Nodes found for floating IP assignment", "ip", addr)
 			}
 		}
 		if needsAssign && chosenNode != nil {
@@ -231,6 +236,12 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 			predicate.LabelChangedPredicate{},
 			predicate.GenerationChangedPredicate{},
 		),
+	}
+
+	if r.FloatingIP.Selector == "" {
+		return errors.New("floating IP selector not specified, refusing to start")
+	} else {
+		log.Info("watching floating IPs with selector", "selector", r.FloatingIP.Selector)
 	}
 
 	if r.FloatingIP.NodeSelector != nil {

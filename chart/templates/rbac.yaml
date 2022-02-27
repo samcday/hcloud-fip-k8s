@@ -1,10 +1,12 @@
+{{ if .Values.rbac.create }}
+{{ (tpl (.Files.Get "generated/role.yaml") .) }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: {{ include "hcloud-fip-k8s.fullname" . }}
   labels:
-    {{- include "hcloud-fip-k8s.labels" . | nindent 4 }}
+      {{- include "hcloud-fip-k8s.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -19,7 +21,7 @@ kind: ClusterRoleBinding
 metadata:
   name: {{ include "hcloud-fip-k8s.fullname" . }}
   labels:
-    {{- include "hcloud-fip-k8s.labels" . | nindent 4 }}
+      {{- include "hcloud-fip-k8s.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -28,3 +30,4 @@ subjects:
   - kind: ServiceAccount
     name: {{ include "hcloud-fip-k8s.serviceAccountName" . }}
     namespace: {{ .Release.Namespace }}
+{{ end }}

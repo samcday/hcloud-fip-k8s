@@ -4,9 +4,9 @@ build:
   artifacts:
   - image: samcday/hcloud-fip-k8s
     ko: {}
-#    hooks:
-#      before:
-#      - command: [bash, build.sh]
+    hooks:
+      before:
+      - command: [bash, build.sh]
 deploy:
   helm:
     releases:
@@ -16,3 +16,8 @@ deploy:
           image: samcday/hcloud-fip-k8s
         imageStrategy:
           helm: {}
+        setValues:
+          floatingIP:
+            selector: role=dev
+            label: node-role.kubernetes.io/dev
+            setupAnnotation: example.com/dev
