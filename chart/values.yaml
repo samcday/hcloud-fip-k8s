@@ -105,7 +105,7 @@ floatingIP:
   # Limit floating IPs to be managed to given label selector. See https://docs.hetzner.cloud/#label-selector
   # selector: role=nat
   # label: node-role.kubernetes.io/nat-gateway
-  # setupAnnotation: samcday.com/nat-gateway
+  # setupAnnotation: example.samcday.com/nat-gateway
   selector: role=vip
   label: node-role.kubernetes.io/vip
   setupAnnotation: samcday.com/vip
@@ -164,7 +164,7 @@ floatingIP:
               type: Directory
               path: /
 config: |-
-  apiVersion: thenatcontroller.samcday.com/v1alpha1
+  apiVersion: hcloud-fip-k8s.samcday.com/v1alpha1
   kind: Config
   cacheNamespace: "{{ .Release.Namespace }}"
   health:
@@ -173,7 +173,7 @@ config: |-
     bindAddress: 127.0.0.1:8080
   leaderElection:
     leaderElect: {{ .Values.leaderElection.enabled }}
-    resourceName: {{ include "the-nat-controller.fullname" . }}
+    resourceName: {{ include "hcloud-fip-k8s.fullname" . }}
     resourceNamespace: "{{ .Release.Namespace }}"
     leaseDuration: "{{ .Values.leaderElection.leaseDuration }}s"
   hcloud:

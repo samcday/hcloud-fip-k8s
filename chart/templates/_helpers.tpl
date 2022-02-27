@@ -1,7 +1,7 @@
 {{/*
 Expand the name of the chart.
 */}}
-{{- define "the-nat-controller.name" -}}
+{{- define "hcloud-fip-k8s.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
@@ -10,7 +10,7 @@ Create a default fully qualified app name.
 We truncate at 63 chars because some Kubernetes name fields are limited to this (by the DNS naming spec).
 If release name contains chart name it will be used as a full name.
 */}}
-{{- define "the-nat-controller.fullname" -}}
+{{- define "hcloud-fip-k8s.fullname" -}}
 {{- if .Values.fullnameOverride }}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
 {{- else }}
@@ -26,16 +26,16 @@ If release name contains chart name it will be used as a full name.
 {{/*
 Create chart name and version as used by the chart label.
 */}}
-{{- define "the-nat-controller.chart" -}}
+{{- define "hcloud-fip-k8s.chart" -}}
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
 Common labels
 */}}
-{{- define "the-nat-controller.labels" -}}
-helm.sh/chart: {{ include "the-nat-controller.chart" . }}
-{{ include "the-nat-controller.selectorLabels" . }}
+{{- define "hcloud-fip-k8s.labels" -}}
+helm.sh/chart: {{ include "hcloud-fip-k8s.chart" . }}
+{{ include "hcloud-fip-k8s.selectorLabels" . }}
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
@@ -45,17 +45,17 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{/*
 Selector labels
 */}}
-{{- define "the-nat-controller.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "the-nat-controller.name" . }}
+{{- define "hcloud-fip-k8s.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "hcloud-fip-k8s.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
 Create the name of the service account to use
 */}}
-{{- define "the-nat-controller.serviceAccountName" -}}
+{{- define "hcloud-fip-k8s.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create }}
-{{- default (include "the-nat-controller.fullname" .) .Values.serviceAccount.name }}
+{{- default (include "hcloud-fip-k8s.fullname" .) .Values.serviceAccount.name }}
 {{- else }}
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
