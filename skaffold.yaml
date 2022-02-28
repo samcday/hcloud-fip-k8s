@@ -2,18 +2,21 @@ apiVersion: skaffold/v2beta27
 kind: Config
 build:
   artifacts:
-  - image: samcday/hcloud-fip-k8s
-    ko: {}
+  - image: ghcr.io/samcday/hcloud-fip-k8s
+    docker: {}
     hooks:
       before:
       - command: [bash, build.sh]
+  local:
+    useDockerCLI: true
+    useBuildkit: true
 deploy:
   helm:
     releases:
       - name: hcloud-fip-k8s
         chartPath: chart/
         artifactOverrides:
-          image: samcday/hcloud-fip-k8s
+          image: ghcr.io/samcday/hcloud-fip-k8s
         imageStrategy:
           helm: {}
         setValues:

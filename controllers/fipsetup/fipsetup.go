@@ -3,7 +3,7 @@ package fipsetup
 import (
 	"context"
 	"fmt"
-	"hcloud-fip-k8s/api/v1alpha1"
+	"github.com/samcday/hcloud-fip-k8s/api/v1alpha1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"

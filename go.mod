@@ -1,4 +1,4 @@
-module hcloud-fip-k8s
+module github.com/samcday/hcloud-fip-k8s
 
 go 1.17
 
