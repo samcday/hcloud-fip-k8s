@@ -9,4 +9,4 @@ RUN --mount=type=cache,id=gomod,target=/go/pkg/mod \
 FROM alpine:3.13
 RUN apk add --no-cache ca-certificates
 COPY --from=builder /usr/src/app/hcloud-fip-k8s /bin/
-ENTRYPOINT /bin/hcloud-fip-k8s
+CMD /bin/hcloud-fip-k8s
