@@ -69,6 +69,9 @@ metrics:
   # if enabled, a PodMonitor will be deployed to scrape the controller metrics
   podMonitor: true
 
+# The namespace the controller operates in. This is where leaderelection leases and setup/teardown Jobs will be.
+namespace: "{{ .Release.Namespace }}"
+
 hcloud:
   # Default way to provide token is to use the well known Secret location (see env: above)
   # You can provide a literal here, if you really want.
@@ -89,6 +92,7 @@ floatingIP:
   selector: # role=egress
   label: # node-role.kubernetes.io/egress
   setupAnnotation: # hcloud-fip-k8s.samcday.com/egress
+  jobNamespace: "{{ tpl .Values.namespace . }}"
   setupJob:
     ttlSecondsAfterFinished: 3600
     template:
@@ -146,7 +150,7 @@ floatingIP:
 config: |-
   apiVersion: hcloud-fip-k8s.samcday.com/v1alpha1
   kind: Config
-  cacheNamespace: "{{ .Release.Namespace }}"
+  cacheNamespace: "{{ tpl .Values.namespace . }}"
   health:
     healthProbeBindAddress: :8081
   metrics:
@@ -154,7 +158,7 @@ config: |-
   leaderElection:
     leaderElect: {{ gt (int .Values.replicas) 1 }}
     resourceName: {{ include "hcloud-fip-k8s.fullname" . }}
-    resourceNamespace: "{{ .Release.Namespace }}"
+    resourceNamespace: "{{ tpl .Values.namespace . }}"
     leaseDuration: "{{ .Values.leaderElection.leaseDuration }}s"
     renewDeadline: "{{ .Values.leaderElection.renewDeadline }}s"
     retryPeriod: "{{ .Values.leaderElection.retryPeriod }}s"

@@ -36,10 +36,13 @@ spec:
             {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          args:
+          command:
+            - /bin/hcloud-fip-k8s
             - -config
             - /config/config.yaml
-            {{- toYaml .Values.extraArgs | nindent 12 }}
+          {{- with .Values.extraArgs }}
+            {{- toYaml . | nindent 12 }}
+          {{ end }}
           env:
             {{- toYaml .Values.env | nindent 12 }}
           ports:

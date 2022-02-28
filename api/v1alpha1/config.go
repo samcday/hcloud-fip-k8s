@@ -32,6 +32,7 @@ type FloatingIP struct {
 	Selector        string                `json:"selector,omitempty"`
 	Label           string                `json:"label,omitempty"`
 	NodeSelector    *metav1.LabelSelector `json:"nodeSelector,omitempty"`
+	JobNamespace    string                `json:"jobNamespace,omitempty"`
 	SetupAnnotation string                `json:"setupAnnotation,omitempty"`
 	SetupJob        batchv1.JobSpec       `json:"setupJob,omitempty"`
 	TeardownJob     batchv1.JobSpec       `json:"teardownJob,omitempty"`

@@ -3,6 +3,7 @@ package fipsetup
 import (
 	"context"
 	"fmt"
+
 	"github.com/samcday/hcloud-fip-k8s/api/v1alpha1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -18,7 +19,7 @@ import (
 )
 
 // +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch;patch
-// +kubebuilder:rbac:namespace="{{.Release.Namespace}}",groups="batch",resources=jobs,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:namespace="{{tpl .Values.namespace .}}",groups="batch",resources=jobs,verbs=get;list;watch;create;update;patch;delete
 
 var log = logf.Log.WithName("fipsetup")
 
@@ -100,7 +101,7 @@ func (r *Reconciler) getJob(ctx context.Context, jobType string, node *corev1.No
 	jobName := fmt.Sprintf("fip-%s-%s-%s", jobType, fip, node.Name)
 
 	job := &batchv1.Job{}
-	err := r.Get(ctx, types.NamespacedName{Namespace: r.CacheNamespace, Name: jobName}, job)
+	err := r.Get(ctx, types.NamespacedName{Namespace: r.FloatingIP.JobNamespace, Name: jobName}, job)
 	if errors.IsNotFound(err) {
 		err = nil
 		job = nil
@@ -111,7 +112,7 @@ func (r *Reconciler) getJob(ctx context.Context, jobType string, node *corev1.No
 func (r *Reconciler) createJob(ctx context.Context, jobType string, fip string, node *corev1.Node, jobSpec *batchv1.JobSpec) error {
 	job := batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: r.CacheNamespace,
+			Namespace: r.FloatingIP.JobNamespace,
 			Name:      fmt.Sprintf("fip-%s-%s-%s", jobType, fip, node.Name),
 		},
 		Spec: *jobSpec,

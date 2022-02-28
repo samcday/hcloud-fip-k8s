@@ -2,15 +2,16 @@ package main
 
 import (
 	"flag"
+	"os"
+	"time"
+
 	"github.com/hetznercloud/hcloud-go/hcloud"
-	"go.uber.org/zap/zapcore"
 	"github.com/samcday/hcloud-fip-k8s/api/v1alpha1"
 	"github.com/samcday/hcloud-fip-k8s/controllers/fipassign"
 	"github.com/samcday/hcloud-fip-k8s/controllers/fipsetup"
+	"go.uber.org/zap/zapcore"
 	"k8s.io/apimachinery/pkg/runtime"
-	"os"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
-	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -23,9 +24,9 @@ import (
 )
 
 // leaderelection needs this RBAC
-// +kubebuilder:rbac:namespace="{{.Release.Namespace}}",groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:namespace="{{.Release.Namespace}}",groups="coordination.k8s.io",resources=leases,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:namespace="{{.Release.Namespace}}",groups="",resources=events,verbs=create;patch
+// +kubebuilder:rbac:namespace="{{tpl .Values.namespace .}}",groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:namespace="{{tpl .Values.namespace .}}",groups="coordination.k8s.io",resources=leases,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:namespace="{{tpl .Values.namespace .}}",groups="",resources=events,verbs=create;patch
 
 var (
 	scheme   = runtime.NewScheme()

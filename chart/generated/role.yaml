@@ -20,7 +20,7 @@ kind: Role
 metadata:
   creationTimestamp: null
   name: '{{ include "hcloud-fip-k8s.fullname" . }}'
-  namespace: '{{.Release.Namespace}}'
+  namespace: '{{tpl .Values.namespace .}}'
 rules:
 - apiGroups:
   - ""
