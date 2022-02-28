@@ -85,7 +85,7 @@ spec:
       - name: config
         configMap:
           name: {{ include "hcloud-fip-k8s.fullname" . }}-config
-      {{ range $index, $vol := .Values.extraVolumes -}}
+      {{- range $index, $vol := .Values.extraVolumes }}
       - name: {{ $vol.name }}
         {{- toYaml (required "extraVolumes[].source missing" $vol.source) | nindent 8 }}
       {{- end }}
