@@ -45,7 +45,7 @@ func main() {
 			"Omit this flag to use the default configuration values. "+
 			"Command-line flags override configuration from this file.")
 	logOpts := zap.Options{
-		Development: true,
+		Development: os.Getenv("DEBUG") != "",
 		TimeEncoder: zapcore.ISO8601TimeEncoder,
 	}
 	logOpts.BindFlags(flag.CommandLine)

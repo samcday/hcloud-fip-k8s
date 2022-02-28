@@ -4,6 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/samcday/hcloud-fip-k8s/api/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -11,11 +15,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/flowcontrol"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
-	"strconv"
-	"strings"
-	"time"
 
 	"github.com/hetznercloud/hcloud-go/hcloud"
 	corev1 "k8s.io/api/core/v1"
@@ -310,7 +310,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 	return ctrl.
 		NewControllerManagedBy(mgr).
-		For(&corev1.Node{}, builder.WithPredicates(preds...)).
+		For(&corev1.Node{} /*, builder.WithPredicates(preds...)*/).
 		Complete(r)
 }
 
