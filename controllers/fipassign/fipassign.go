@@ -94,14 +94,17 @@ func (r *Reconciler) reconcileFloatingIPs(ctx context.Context) error {
 			}
 			var candidates []*corev1.Node
 			for idx, node := range nodes.Items {
-				if node.Spec.Unschedulable {
-					continue
-				}
+				unschedulable := node.Spec.Unschedulable
 
 				for _, condition := range node.Status.Conditions {
 					if condition.Type == corev1.NodeReady && condition.Status != corev1.ConditionTrue {
-						continue
+						unschedulable = true
+						break
 					}
+				}
+
+				if unschedulable {
+					continue
 				}
 
 				if node.Labels[r.FloatingIP.Label] == addr {
