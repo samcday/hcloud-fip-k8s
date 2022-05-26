@@ -15,6 +15,19 @@ TODO
 
 ## Installation
 
-TODO: helm install instructions
+### Helm
 
-TODO: rendered manifest install instructions
+This is the recommended way to install hcloud-fip-k8s.
+
+```sh
+helm repo add hcloud-fip-k8s https://samcday.github.io/hcloud-fip-k8s/
+helm repo update hcloud-fip-k8s
+helm install hcloud-fip-k8s hcloud-fip-k8s/hcloud-fip-k8s \
+ --set floatingIP.selector=role=egress \
+ --set floatingIP.label=node-role.kubernetes.io/egress \
+ --set floatingIP.setupAnnotation=hcloud-fip-k8s.samcday.com/egress
+```
+
+### Static manifests
+
+TODO
