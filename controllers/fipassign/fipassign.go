@@ -97,6 +97,13 @@ func (r *Reconciler) reconcileFloatingIPs(ctx context.Context) error {
 				if node.Spec.Unschedulable {
 					continue
 				}
+
+				for _, condition := range node.Status.Conditions {
+					if condition.Type == corev1.NodeReady && condition.Status != corev1.ConditionTrue {
+						continue
+					}
+				}
+
 				if node.Labels[r.FloatingIP.Label] == addr {
 					// We've found a schedulable Node that is already requesting this floating IP. Automatic winner.
 					chosenNode = &nodes.Items[idx]
