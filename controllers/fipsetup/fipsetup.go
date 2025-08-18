@@ -98,7 +98,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 }
 
 func (r *Reconciler) getJob(ctx context.Context, jobType string, node *corev1.Node, fip string) (*batchv1.Job, error) {
-	jobName := fmt.Sprintf("fip-%s-%s-%s", jobType, fip, node.Name)
+	jobName := fmt.Sprintf("fip-%s-%s-%s", jobType, fip, node.Name)[:63]
 
 	job := &batchv1.Job{}
 	err := r.Get(ctx, types.NamespacedName{Namespace: r.FloatingIP.JobNamespace, Name: jobName}, job)
