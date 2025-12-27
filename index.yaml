@@ -2,8 +2,18 @@ apiVersion: v1
 entries:
   hcloud-fip-k8s:
   - apiVersion: v2
+    appVersion: 0.1.0
+    created: "2025-12-27T01:05:14.944710287Z"
+    description: Manage hcloud floating IPs from Kubernetes.
+    digest: 362bffd83758933f30ffe38cc139c2353881af46cb6bc8508b05b257e38fa5d3
+    name: hcloud-fip-k8s
+    type: application
+    urls:
+    - https://samcday.github.io/hcloud-fip-k8s/hcloud-fip-k8s-0.1.0.tgz
+    version: 0.1.0
+  - apiVersion: v2
     appVersion: 0.0.13
-    created: "2022-02-28T08:22:20.059418195Z"
+    created: "2025-12-27T01:05:14.938642561Z"
     description: Manage hcloud floating IPs from Kubernetes.
     digest: 1dab565295e781c31eb7814868f9e8bf0c499ff086bc1efc51ba45797d585074
     name: hcloud-fip-k8s
@@ -13,7 +23,7 @@ entries:
     version: 0.0.13
   - apiVersion: v2
     appVersion: 0.0.12
-    created: "2022-02-28T08:22:20.058255943Z"
+    created: "2025-12-27T01:05:14.938088009Z"
     description: Manage hcloud floating IPs from Kubernetes.
     digest: cd000b77492a69623f5f43b6838a161e00be54a7020af31210515990db11b53b
     name: hcloud-fip-k8s
@@ -23,7 +33,7 @@ entries:
     version: 0.0.12
   - apiVersion: v2
     appVersion: 0.0.11
-    created: "2022-02-28T08:22:20.048269157Z"
+    created: "2025-12-27T01:05:14.932956904Z"
     description: Manage hcloud floating IPs from Kubernetes.
     digest: 52eca72760f71d510af1ec5ebd64147a1fe07ce032a83172c0fe322c7a61fc37
     name: hcloud-fip-k8s
@@ -33,7 +43,7 @@ entries:
     version: 0.0.11
   - apiVersion: v2
     appVersion: 0.0.10
-    created: "2022-02-28T08:22:20.040038955Z"
+    created: "2025-12-27T01:05:14.928363218Z"
     description: Manage hcloud floating IPs from Kubernetes.
     digest: f0675c6915d030fe6977be10337e9ce57c76351ecb3ed0dff68d0e2548d3901c
     name: hcloud-fip-k8s
@@ -43,7 +53,7 @@ entries:
     version: 0.0.10
   - apiVersion: v2
     appVersion: 0.0.9
-    created: "2022-02-28T08:22:20.072733376Z"
+    created: "2025-12-27T01:05:14.944172415Z"
     description: Manage hcloud floating IPs from Kubernetes.
     digest: ab2af52c5a13e59f07f82019a8d6a5c2b3763903817e23f09b7d340629cf63fa
     name: hcloud-fip-k8s
@@ -53,7 +63,7 @@ entries:
     version: 0.0.9
   - apiVersion: v2
     appVersion: 0.0.7
-    created: "2022-02-28T08:22:20.06855425Z"
+    created: "2025-12-27T01:05:14.942559342Z"
     description: Manage hcloud floating IPs from Kubernetes.
     digest: e6b9bd1140cf6a5147012323951afc5c43eb60804e99fe562e43c53cef6d33a9
     name: hcloud-fip-k8s
@@ -63,7 +73,7 @@ entries:
     version: 0.0.7
   - apiVersion: v2
     appVersion: 0.0.6
-    created: "2022-02-28T08:22:20.066532564Z"
+    created: "2025-12-27T01:05:14.941480483Z"
     description: Manage hcloud floating IPs from Kubernetes.
     digest: de74e34dcbf08c13bb8f62e581d35767bf37c5c18605ef46d10a8ebbbf2ea2c0
     name: hcloud-fip-k8s
@@ -73,7 +83,7 @@ entries:
     version: 0.0.6
   - apiVersion: v2
     appVersion: 0.0.5
-    created: "2022-02-28T08:22:20.064760574Z"
+    created: "2025-12-27T01:05:14.940317981Z"
     description: Manage hcloud floating IPs from Kubernetes.
     digest: d43b4936a377f2c894afb6545f32e6e01492f11d659e00d45b618bebd1696d74
     name: hcloud-fip-k8s
@@ -83,7 +93,7 @@ entries:
     version: 0.0.5
   - apiVersion: v2
     appVersion: 0.0.3
-    created: "2022-02-28T08:22:20.06074141Z"
+    created: "2025-12-27T01:05:14.939232169Z"
     description: Manage hcloud floating IPs from Kubernetes.
     digest: 26ba08f9e7ea4f8e057024b73d8ebfcbabed9561a0cabbbed9bdcfc1f51df9cd
     name: hcloud-fip-k8s
@@ -91,4 +101,4 @@ entries:
     urls:
     - https://samcday.github.io/hcloud-fip-k8s/hcloud-fip-k8s-0.0.3.tgz
     version: 0.0.3
-generated: "2022-02-28T08:22:20.035847424Z"
+generated: "2025-12-27T01:05:14.925658472Z"
