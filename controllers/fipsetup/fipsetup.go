@@ -2,6 +2,7 @@ package fipsetup
 
 import (
 	"context"
+	"crypto/md5"
 	"fmt"
 
 	"github.com/samcday/hcloud-fip-k8s/api/v1alpha1"
@@ -97,8 +98,17 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	return reconcile.Result{}, nil
 }
 
+func (r *Reconciler) hashNodeName(nodeName string) string {
+	hash := md5.Sum([]byte(nodeName))
+	return fmt.Sprintf("%x", hash)[:8]
+}
+
+func (r *Reconciler) getJobName(jobType string, fip string, node *corev1.Node) string {
+	return fmt.Sprintf("fip-%s-%s-%s", jobType, fip, r.hashNodeName(node.Name))[:63]
+}
+
 func (r *Reconciler) getJob(ctx context.Context, jobType string, node *corev1.Node, fip string) (*batchv1.Job, error) {
-	jobName := fmt.Sprintf("fip-%s-%s-%s", jobType, fip, node.Name)
+	jobName := r.getJobName(jobType, fip, node)
 
 	job := &batchv1.Job{}
 	err := r.Get(ctx, types.NamespacedName{Namespace: r.FloatingIP.JobNamespace, Name: jobName}, job)
@@ -113,7 +123,7 @@ func (r *Reconciler) createJob(ctx context.Context, jobType string, fip string, 
 	job := batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: r.FloatingIP.JobNamespace,
-			Name:      fmt.Sprintf("fip-%s-%s-%s", jobType, fip, node.Name),
+			Name:      r.getJobName(jobType, fip, node),
 		},
 		Spec: *jobSpec,
 	}
