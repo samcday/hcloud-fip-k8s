@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -euxo pipefail
 
 log() {
   echo "$@" >&2
@@ -17,12 +17,29 @@ E2E_SELECTOR="${E2E_SELECTOR:-e2e-run=${E2E_CLUSTER_NAME}}"
 E2E_LABEL_KEY="${E2E_LABEL_KEY:-e2e.hcloud-fip-k8s.samcday.com/fip}"
 E2E_SETUP_ANNOTATION="${E2E_SETUP_ANNOTATION:-e2e.hcloud-fip-k8s.samcday.com/fip}"
 E2E_FIP_COUNT="${E2E_FIP_COUNT:-2}"
+E2E_IMAGE_REPO="${E2E_IMAGE_REPO:-}"
+E2E_IMAGE_TAG="${E2E_IMAGE_TAG:-}"
+E2E_IMAGE_TAR="${E2E_IMAGE_TAR:-}"
+E2E_SSH_USER="${E2E_SSH_USER:-root}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 E2E_SSH_DIR="${SCRIPT_DIR}/.ssh"
 E2E_WORK_DIR="${SCRIPT_DIR}/.e2e"
 E2E_CONFIG="${E2E_WORK_DIR}/hetzner-k3s.yaml"
 E2E_KUBECONFIG="${E2E_WORK_DIR}/kubeconfig"
+
+cat <<EOF
+E2E_IMAGE_REPO=${E2E_IMAGE_REPO}
+E2E_IMAGE_TAG=${E2E_IMAGE_TAG}
+KUBECONFIG=${E2E_KUBECONFIG}
+HCLOUD_TOKEN=${HCLOUD_TOKEN}
+E2E_CLUSTER_NAME=${E2E_CLUSTER_NAME}
+E2E_NAMESPACE=${E2E_NAMESPACE}
+E2E_SELECTOR=${E2E_SELECTOR}
+E2E_LABEL_KEY=${E2E_LABEL_KEY}
+E2E_SETUP_ANNOTATION=${E2E_SETUP_ANNOTATION}
+E2E_FIP_COUNT=${E2E_FIP_COUNT}
+EOF
 
 if [[ -z "${HCLOUD_TOKEN}" ]]; then
   log "HCLOUD_TOKEN is not set and no active hcloud context token was found."
@@ -98,26 +115,67 @@ while IFS= read -r node; do
   fi
 done < <(kubectl get nodes --no-headers | awk '$2 ~ /SchedulingDisabled/ {print $1}')
 
+if [[ -n "${E2E_IMAGE_TAR}" ]]; then
+  if [[ ! -f "${E2E_IMAGE_TAR}" ]]; then
+    log "E2E_IMAGE_TAR ${E2E_IMAGE_TAR} does not exist."
+    exit 1
+  fi
+  if [[ -z "${E2E_IMAGE_REPO}" || -z "${E2E_IMAGE_TAG}" ]]; then
+    log "E2E_IMAGE_REPO and E2E_IMAGE_TAG must be set when E2E_IMAGE_TAR is provided."
+    exit 1
+  fi
+  image_name="${E2E_IMAGE_REPO}:${E2E_IMAGE_TAG}"
+  image_tar_name="$(basename "${E2E_IMAGE_TAR}")"
+  ssh_opts=(-i "${E2E_SSH_DIR}/id_ed25519" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null)
+  while IFS=$'\t' read -r name external internal; do
+    ip="${external:-${internal}}"
+    if [[ -z "${ip}" ]]; then
+      log "No IP found for node ${name}."
+      exit 1
+    fi
+    if ssh "${ssh_opts[@]}" "${E2E_SSH_USER}@${ip}" "k3s ctr images list | grep -Fq '${image_name}'" </dev/null; then
+      log "Image ${image_name} already present on ${name}, skipping import."
+      continue
+    fi
+    log "Importing ${image_name} into node ${name} (${ip})..."
+    ssh "${ssh_opts[@]}" "${E2E_SSH_USER}@${ip}" "mkdir -p /var/lib/rancher/k3s/agent/images" </dev/null >/dev/null
+    if command -v rsync >/dev/null 2>&1 && ssh "${ssh_opts[@]}" "${E2E_SSH_USER}@${ip}" "command -v rsync" </dev/null >/dev/null 2>&1; then
+      rsync -az --checksum -e "ssh ${ssh_opts[*]}" "${E2E_IMAGE_TAR}" "${E2E_SSH_USER}@${ip}:/var/lib/rancher/k3s/agent/images/${image_tar_name}" >/dev/null
+    else
+      scp "${ssh_opts[@]}" "${E2E_IMAGE_TAR}" "${E2E_SSH_USER}@${ip}:/var/lib/rancher/k3s/agent/images/${image_tar_name}" </dev/null >/dev/null
+    fi
+    for _ in $(seq 1 30); do
+      if ssh "${ssh_opts[@]}" "${E2E_SSH_USER}@${ip}" "k3s ctr images list | grep -Fq '${image_name}'" </dev/null; then
+        break
+      fi
+      sleep 2
+    done
+  done < <(kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.addresses[?(@.type=="ExternalIP")].address}{"\t"}{.status.addresses[?(@.type=="InternalIP")].address}{"\n"}{end}')
+fi
+
 kubectl create namespace "${E2E_NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 kubectl -n "${E2E_NAMESPACE}" create secret generic hcloud \
   --from-literal=token="${HCLOUD_TOKEN}" \
   --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 
+helm_args=()
+if [[ -n "${E2E_IMAGE_REPO}" ]]; then
+  helm_args+=(--set "image.repository=${E2E_IMAGE_REPO}")
+fi
+if [[ -n "${E2E_IMAGE_TAG}" ]]; then
+  helm_args+=(--set "image.tag=${E2E_IMAGE_TAG}")
+fi
+if [[ -n "${E2E_IMAGE_TAR}" ]]; then
+  helm_args+=(--set "image.pullPolicy=IfNotPresent")
+fi
+
 helm upgrade --install hcloud-fip-k8s ./chart \
   --namespace "${E2E_NAMESPACE}" \
   --set floatingIP.selector="${E2E_SELECTOR}" \
   --set floatingIP.label="${E2E_LABEL_KEY}" \
-  --set floatingIP.setupAnnotation="${E2E_SETUP_ANNOTATION}" >/dev/null
+  --set floatingIP.setupAnnotation="${E2E_SETUP_ANNOTATION}" \
+  "${helm_args[@]}" >/dev/null
 
 kubectl -n "${E2E_NAMESPACE}" rollout status deployment/hcloud-fip-k8s --timeout=5m >&2
 
-cat <<EOF
-E2E_RUN=1
-KUBECONFIG=${E2E_KUBECONFIG}
-HCLOUD_TOKEN=${HCLOUD_TOKEN}
-E2E_NAMESPACE=${E2E_NAMESPACE}
-E2E_SELECTOR=${E2E_SELECTOR}
-E2E_LABEL_KEY=${E2E_LABEL_KEY}
-E2E_SETUP_ANNOTATION=${E2E_SETUP_ANNOTATION}
-E2E_FIP_COUNT=${E2E_FIP_COUNT}
-EOF
+echo E2E_RUN=1

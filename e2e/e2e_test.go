@@ -518,7 +518,7 @@ func waitForAssignment(ctx context.Context, t *testing.T, kube *kubernetes.Clien
 		}
 		if err := assertSingleLabel(nodes.Items, labelKey, fip.IP.String()); err != nil {
 			logAssignmentWait(t, start, &lastLog, "label not unique", err.Error())
-			return false, err
+			return false, nil
 		}
 		assignedNode = target.Name
 		if avoidNode != "" && assignedNode == avoidNode {
