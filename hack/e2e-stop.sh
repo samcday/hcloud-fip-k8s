@@ -12,7 +12,7 @@ if [[ ! -f "${E2E_CONFIG}" ]]; then
   exit 1
 fi
 
-cluster_name="$(rg -n "^cluster_name:" "${E2E_CONFIG}" | head -n 1 | awk '{print $2}')"
+cluster_name="$(grep -m 1 "^cluster_name:" "${E2E_CONFIG}" | awk '{print $2}')"
 
 if [[ -z "${cluster_name}" ]]; then
   echo "cluster_name missing from ${E2E_CONFIG}." >&2

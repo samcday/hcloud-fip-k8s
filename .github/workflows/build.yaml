@@ -1,12 +1,55 @@
-name: Build/Push image
+name: Build
 on:
   pull_request:
     branches: [main]
   push:
     branches: [main]
     tags: ['*']
+permissions:
+  contents: write
+  packages: write
 jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+      - name: Install hetzner-k3s
+        run: |
+          curl -fsSL -o /usr/local/bin/hetzner-k3s \
+            https://github.com/vitobotta/hetzner-k3s/releases/latest/download/hetzner-k3s-linux-amd64
+          chmod +x /usr/local/bin/hetzner-k3s
+      - name: Start e2e cluster
+        env:
+          E2E_RUN: "1"
+          HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+        run: |
+          ./hack/e2e-start.sh >> "$GITHUB_ENV"
+      - name: Run e2e tests
+        env:
+          E2E_RUN: "1"
+          E2E_FIP_COUNT: "1"
+        run: |
+          go test ./e2e -v
+      - name: Stop e2e cluster
+        if: always()
+        env:
+          HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+        run: |
+          ./hack/e2e-stop.sh
+
   build:
+    needs: e2e
     strategy:
       matrix:
         include:
