@@ -1,12 +1,63 @@
-name: Build/Push image
+name: Build
 on:
   pull_request:
     branches: [main]
   push:
     branches: [main]
     tags: ['*']
+permissions:
+  contents: write
+  packages: write
 jobs:
-  build:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+      - name: Install hetzner-k3s
+        run: |
+          curl -fsSL -o /usr/local/bin/hetzner-k3s \
+            https://github.com/vitobotta/hetzner-k3s/releases/latest/download/hetzner-k3s-linux-amd64
+          chmod +x /usr/local/bin/hetzner-k3s
+      - name: Build e2e image
+        run: |
+          docker build -t ghcr.io/samcday/hcloud-fip-k8s:${{ github.sha }} .
+          docker save -o /tmp/hcloud-fip-k8s-image.tar ghcr.io/samcday/hcloud-fip-k8s:${{ github.sha }}
+      - name: Start e2e cluster
+        env:
+          E2E_RUN: "1"
+          HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+          E2E_CLUSTER_NAME: hcloud-fip-k8s-e2e-${{ github.run_id }}
+          E2E_IMAGE_REPO: ghcr.io/samcday/hcloud-fip-k8s
+          E2E_IMAGE_TAG: ${{ github.sha }}
+          E2E_IMAGE_TAR: /tmp/hcloud-fip-k8s-image.tar
+        run: |
+          ./hack/e2e-start.sh >> "$GITHUB_ENV"
+      - name: Run e2e tests
+        env:
+          E2E_RUN: "1"
+          E2E_FIP_COUNT: "1"
+        run: |
+          go test ./e2e -v
+      - name: Stop e2e cluster
+        if: always()
+        env:
+          HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+        run: |
+          ./hack/e2e-stop.sh
+
+  images:
+    needs: e2e
     strategy:
       matrix:
         include:
@@ -67,7 +118,7 @@ jobs:
 
   manifest:
     if: github.event_name != 'pull_request'
-    needs: build
+    needs: images
     runs-on: ubuntu-latest
     steps:
       - name: Set up Docker Buildx

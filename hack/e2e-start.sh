@@ -203,6 +203,17 @@ if [[ -n "${E2E_IMAGE_TAR}" ]]; then
   helm_args+=(--set "image.pullPolicy=IfNotPresent")
 fi
 
+helm_args=()
+if [[ -n "${E2E_IMAGE_REPO}" ]]; then
+  helm_args+=(--set "image.repository=${E2E_IMAGE_REPO}")
+fi
+if [[ -n "${E2E_IMAGE_TAG}" ]]; then
+  helm_args+=(--set "image.tag=${E2E_IMAGE_TAG}")
+fi
+if [[ -n "${E2E_IMAGE_TAR}" ]]; then
+  helm_args+=(--set "image.pullPolicy=IfNotPresent")
+fi
+
 helm upgrade --install hcloud-fip-k8s ./chart \
   --namespace "${E2E_NAMESPACE}" \
   --set floatingIP.selector="${E2E_SELECTOR}" \
