@@ -104,7 +104,11 @@ func (r *Reconciler) hashNodeName(nodeName string) string {
 }
 
 func (r *Reconciler) getJobName(jobType string, fip string, node *corev1.Node) string {
-	return fmt.Sprintf("fip-%s-%s-%s", jobType, fip, r.hashNodeName(node.Name))[:63]
+	name := fmt.Sprintf("fip-%s-%s-%s", jobType, fip, r.hashNodeName(node.Name))
+	if len(name) > 63 {
+		return name[:63]
+	}
+	return name
 }
 
 func (r *Reconciler) getJob(ctx context.Context, jobType string, node *corev1.Node, fip string) (*batchv1.Job, error) {
