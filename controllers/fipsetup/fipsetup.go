@@ -94,7 +94,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 			if err := r.setAnnotation(ctx, node, assignedFIP); err != nil {
 				return reconcile.Result{}, err
 			}
-			r.recordSetupEvent(setupJob, &node, assignedFIP)
 		}
 	}
 
@@ -223,11 +222,4 @@ func (r *Reconciler) setAnnotation(ctx context.Context, node corev1.Node, fip st
 		log.Info("teardown complete, removed annotation from Node", "node", node.Name)
 	}
 	return nil
-}
-
-func (r *Reconciler) recordSetupEvent(job *batchv1.Job, node *corev1.Node, fip string) {
-	if r.recorder == nil || job == nil || node == nil {
-		return
-	}
-	r.recorder.Eventf(job, corev1.EventTypeNormal, "FloatingIPConfigured", "FIP is configured for %s on Node %s", fip, node.Name)
 }

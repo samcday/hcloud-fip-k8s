@@ -82,12 +82,12 @@ func TestFloatingIPAssignment(t *testing.T) {
 		assignCtx, assignCancel := context.WithTimeout(ctx, cfg.timeout)
 		nodeName := waitForAssignment(assignCtx, t, kubeClient, hcloudClient, fip.ID, cfg.labelKey, "")
 		assignCancel()
+
+		eventCtx, eventCancel := context.WithTimeout(ctx, cfg.timeout)
+		waitForEvent(eventCtx, t, kubeClient, cfg.namespace, "FloatingIPAssigned", fmt.Sprintf("%s assigned to Node", fip.IP.String()))
+		eventCancel()
 		assignments[fip.ID] = nodeName
 	}
-
-	eventCtx, eventCancel := context.WithTimeout(ctx, cfg.timeout)
-	waitForEventMessage(eventCtx, t, kubeClient, cfg.namespace, "FIP is configured")
-	eventCancel()
 
 	clearStaleLabels(ctx, t, kubeClient, cfg.labelKey, fips)
 	if !hasLabelFreeNode(kubeClient, cfg.labelKey) {
@@ -677,29 +677,40 @@ func logAssignmentWait(t *testing.T, start time.Time, lastLog *time.Time, msg, d
 	}
 }
 
-func waitForEventMessage(ctx context.Context, t *testing.T, kube *kubernetes.Clientset, namespace, message string) {
+func waitForEvent(ctx context.Context, t *testing.T, kube *kubernetes.Clientset, namespace, reason, message string) {
 	t.Helper()
 	if namespace == "" {
 		t.Fatalf("event namespace must be set")
 	}
 	start := time.Now()
 	lastLog := time.Now()
+	logDetail := message
+	if logDetail == "" {
+		logDetail = reason
+	}
 	err := poll(ctx, func() (bool, error) {
 		list, err := kube.CoreV1().Events(namespace).List(ctx, metav1.ListOptions{})
 		if err != nil {
 			return false, err
 		}
 		for _, event := range list.Items {
-			if strings.Contains(event.Message, message) {
-				t.Logf("found event %s/%s: %s", event.Namespace, event.Name, event.Message)
-				return true, nil
+			if reason != "" && event.Reason != reason {
+				continue
 			}
+			if message != "" && !strings.Contains(event.Message, message) {
+				continue
+			}
+			if reason == "" && message == "" {
+				continue
+			}
+			t.Logf("found event %s/%s: reason=%s message=%s", event.Namespace, event.Name, event.Reason, event.Message)
+			return true, nil
 		}
-		logAssignmentWait(t, start, &lastLog, "waiting for event", message)
+		logAssignmentWait(t, start, &lastLog, "waiting for event", logDetail)
 		return false, nil
 	})
 	if err != nil {
-		t.Fatalf("failed waiting for event %q in namespace %s: %v", message, namespace, err)
+		t.Fatalf("failed waiting for event reason %q message %q in namespace %s: %v", reason, message, namespace, err)
 	}
 }
 
