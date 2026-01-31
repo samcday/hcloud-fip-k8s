@@ -98,13 +98,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	return reconcile.Result{}, nil
 }
 
-func (r *Reconciler) hashNodeName(nodeName string) string {
-	hash := md5.Sum([]byte(nodeName))
+func (r *Reconciler) hashJobIdentity(jobType string, fip string, nodeName string) string {
+	hash := md5.Sum([]byte(fmt.Sprintf("%s-%s-%s", jobType, fip, nodeName)))
 	return fmt.Sprintf("%x", hash)[:8]
 }
 
 func (r *Reconciler) getJobName(jobType string, fip string, node *corev1.Node) string {
-	name := fmt.Sprintf("fip-%s-%s-%s", jobType, fip, r.hashNodeName(node.Name))
+	name := fmt.Sprintf("fip-%s-%s", jobType, r.hashJobIdentity(jobType, fip, node.Name))
 	if len(name) > 63 {
 		return name[:63]
 	}
